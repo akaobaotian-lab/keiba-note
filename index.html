@@ -303,7 +303,9 @@ function renderSetup() {
     }, 300);
   };
 }
-$("setbtn").addEventListener("click", () => { S.tab = "setup"; render(); });
+$("setbtn").addEventListener("click", () => { history.pushState({ k: 1 }, ""); S.tab = "setup"; render(); });
+// スマホの「戻る」: レースや設定を開いていたら一覧に戻す（アプリを閉じない）
+window.addEventListener("popstate", () => { if (S.open || S.tab === "setup") { S.open = null; S.tab = "yoso"; render(); } });
 
 // ---- 払戻の計算 ----
 function key(kind, c) { return (UNORDERED.has(kind) ? [...c].sort((a, b) => a - b) : c).join("-"); }
@@ -462,7 +464,7 @@ function renderYoso() {
         ${mb.length ? `<span class="mine ${ret ? "hit" : ""}">記録 ${mb.length}件 ${yen(cost)}${ret !== null ? " → " + yen(ret) : ""}</span>` : ""}
       </button>`; }).join("")}
   </div>`;
-  v.querySelectorAll(".rc").forEach(el => el.addEventListener("click", () => { S.open = el.dataset.rid; S.b = { kind: "3連複", way: "form", cols: [[], [], []], box: [], unit: S.b.unit || 100 }; render(); window.scrollTo(0, 0); }));
+  v.querySelectorAll(".rc").forEach(el => el.addEventListener("click", () => { history.pushState({ r: 1 }, ""); S.open = el.dataset.rid; S.b = { kind: "3連複", way: "form", cols: [[], [], []], box: [], unit: S.b.unit || 100 }; render(); window.scrollTo(0, 0); }));
 }
 
 function renderRace(v, race) {
@@ -509,7 +511,7 @@ function renderRace(v, race) {
     ${mb.length ? `<div class="bets">${mb.map(bt => { const r = betReturn(race, bt); const lk = leakOf(race, bt); return `<div class="bet"><span class="d">${esc(bt.shape ? shapeText(bt.shape) : bt.kind + " " + bt.desc)}（${bt.items.length}点 ${yen(bt.cost)}）<span class="note">${bt.source === "paste" ? "貼り付け" : "アプリ"}</span>${lk ? `<br><span class="leak">${esc(lk)}</span>` : ""}</span>${r !== null ? `<b class="${r ? "res1" : ""}">${yen(r)}</b>` : ""}<button data-del="${bt.id}">消す</button></div>`; }).join("")}</div>` : `<p class="note">まだ記録がありません。</p>`}
     ${cmp ? `<p class="note">同じ形で比べると（三連複）: 本人 ${yen(cmp.me)}／人気版 ${yen(cmp.pop)}${cmp.mark !== null ? `／印版 ${yen(cmp.mark)}` : ""}${cmp.model !== null ? `／モデル版 ${yen(cmp.model)}` : ""}。選んだ3頭 ${cmp.picks.join(" ")} は3着内に${cmp.picksIn}頭（人気上位3頭は${cmp.pop3In}頭）</p>` : ""}
   </div>`;
-  $("back").onclick = () => { S.open = null; render(); };
+  $("back").onclick = () => { history.back(); };
   v.querySelectorAll("[data-kind]").forEach(el => el.onclick = () => { b.kind = el.dataset.kind; render(); });
   v.querySelectorAll("[data-way]").forEach(el => el.onclick = () => { b.way = el.dataset.way; render(); });
   v.querySelectorAll("[data-q]").forEach(el => el.onclick = () => { quickFill(race, el.dataset.q); render(); });
