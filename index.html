@@ -123,6 +123,7 @@ details.cl summary { cursor: pointer; font-size: .8rem; color: var(--muted); }
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <script>
 "use strict";
 const WAKU = ["#ffffff","#1d1d1d","#d8262b","#2059b5","#f1d02c","#2a8a3e","#ef8a1f","#f29bb6"];
@@ -228,7 +229,19 @@ function renderSetup() {
     <h2>スマホで開く</h2>
     <div class="qr">${qr}</div>
     <p class="note">スマホのカメラでこの QR を読むとアプリが開きます（${esc(url)}）。開いたら共有メニューの「ホーム画面に追加」でアプリとして使えます。PC では Edge / Chrome のアドレス欄の「アプリをインストール」でデスクトップアプリになります。</p>
-    <p class="note">鍵は QR に入れていません。スマホでも最初に1回だけ、下の欄に同じ鍵を入れてください。</p>
+    <p class="note">この QR に鍵は入っていません。スマホで開いたら、下の「つないだ端末から鍵を受け取る」で鍵を読み取ります。</p>
+  </div>
+  ${c.token ? `<div class="panel setup">
+    <h2>スマホに鍵を渡す</h2>
+    <p class="note">スマホのアプリで「PCの鍵のQRを読む」を押してから、下のボタンで鍵の QR を出して読ませてください。<b>この QR は鍵そのものです。人に見せたり写真を残したりしないでください。</b>読み終わったら隠してください。</p>
+    <div class="quick"><button id="kq-show">鍵の QR を出す</button></div>
+    <div class="qr" id="kq" hidden></div>
+  </div>` : ""}
+  <div class="panel setup">
+    <h2>つないだ端末から鍵を受け取る</h2>
+    <p class="note">もう一方の端末（PC）で「鍵の QR を出す」を押し、ここでその QR を読みます。手で打つ必要はありません。</p>
+    <div class="quick"><button class="primary" id="kq-scan">PCの鍵のQRを読む</button><button id="kq-stop" hidden>やめる</button><span class="status" id="kq-msg"></span></div>
+    <video id="kq-video" playsinline muted hidden style="width:100%;max-width:320px;border-radius:8px"></video>
   </div>
   <div class="panel setup">
     <h2>データの置き場所（GitHub の非公開リポジトリ）</h2>
@@ -256,6 +269,39 @@ function renderSetup() {
     } catch (e) { $("cf-msg").textContent = "つながりません（" + (e.code || e.message) + "）"; }
   };
   $("cf-back").onclick = () => { S.tab = "yoso"; render(); };
+  // 鍵の受け渡し: QR の中身は "keiba-gh:" + {o,r,t}。URL にはしない（履歴やサーバーに鍵が残らないように）
+  const ks = $("kq-show");
+  if (ks) ks.onclick = () => {
+    const box = $("kq");
+    if (!box.hidden) { box.hidden = true; box.innerHTML = ""; ks.textContent = "鍵の QR を出す"; return; }
+    const q = qrcode(0, "L"); q.addData("keiba-gh:" + JSON.stringify({ o: c.owner, r: c.repo, t: c.token })); q.make();
+    box.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true }); box.hidden = false; ks.textContent = "鍵の QR を隠す";
+    setTimeout(() => { if (!box.hidden) ks.click(); }, 120000);   // 出しっぱなしにしない（2分で隠す）
+  };
+  let stream = null, timer = null;
+  const stop = () => { if (timer) clearInterval(timer); timer = null; stream?.getTracks().forEach(t => t.stop()); stream = null; $("kq-video").hidden = true; $("kq-stop").hidden = true; };
+  $("kq-stop").onclick = () => { stop(); $("kq-msg").textContent = ""; };
+  $("kq-scan").onclick = async () => {
+    const v = $("kq-video"), msg = $("kq-msg");
+    try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }); }
+    catch { msg.textContent = "カメラを使えませんでした。ブラウザの設定でカメラを許可してください"; return; }
+    v.srcObject = stream; v.hidden = false; $("kq-stop").hidden = false; await v.play(); msg.textContent = "PC の画面の鍵の QR を映してください";
+    const cv = document.createElement("canvas"), cx = cv.getContext("2d", { willReadFrequently: true });
+    const det = "BarcodeDetector" in window ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
+    timer = setInterval(async () => {
+      if (!v.videoWidth) return;
+      let text = null;
+      try {
+        if (det) { const r = await det.detect(v); text = r[0]?.rawValue || null; }
+        else if (window.jsQR) { cv.width = v.videoWidth; cv.height = v.videoHeight; cx.drawImage(v, 0, 0); const d = cx.getImageData(0, 0, cv.width, cv.height); text = jsQR(d.data, d.width, d.height)?.data || null; }
+      } catch {}
+      if (!text) return;
+      if (!text.startsWith("keiba-gh:")) { msg.textContent = "鍵の QR ではありません（PC で「鍵の QR を出す」を押した方を映してください）"; return; }
+      stop();
+      try { const x = JSON.parse(text.slice(9)); $("cf-owner").value = x.o; $("cf-repo").value = x.r; $("cf-token").value = x.t; msg.textContent = "鍵を受け取りました。つないでいます…"; $("cf-save").click(); }
+      catch { msg.textContent = "読み取りに失敗しました。もう一度読んでください"; }
+    }, 300);
+  };
 }
 $("setbtn").addEventListener("click", () => { S.tab = "setup"; render(); });
 
