@@ -97,7 +97,7 @@ details.cl summary { cursor: pointer; font-size: .8rem; color: var(--muted); }
 .empty { text-align: center; color: var(--muted); padding: 24px 8px; font-size: .9rem; }
 .back { justify-self: start; }
 .setup { display: grid; gap: 8px; }
-.setup input[type=text], .setup input[type=password] { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; width: 100%; box-sizing: border-box; }
+.setup input[type=text], .setup input[type=password] { background: var(--card); border: 2px solid var(--muted); font-size: 16px; min-height: 44px; border-radius: 8px; padding: 6px 8px; width: 100%; box-sizing: border-box; }
 .qr { background: #fff; padding: 10px; border-radius: 8px; justify-self: start; }
 .qr svg { display: block; width: 220px; height: 220px; }
 .top .acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
@@ -234,7 +234,7 @@ function renderSetup() {
     <h2>データの置き場所（GitHub の非公開リポジトリ）</h2>
     <label class="note">持ち主（GitHub のユーザー名）<input type="text" id="cf-owner" value="${esc(c.owner || "akaobaotian-lab")}" autocomplete="off" autocapitalize="off"></label>
     <label class="note">リポジトリ名<input type="text" id="cf-repo" value="${esc(c.repo || "keiba-data")}" autocomplete="off" autocapitalize="off"></label>
-    <label class="note">鍵（fine-grained token。この端末の中にだけ保存）<input type="password" id="cf-token" value="${esc(c.token || "")}" autocomplete="off"></label>
+    <label class="note">鍵（fine-grained token。この端末の中にだけ保存）<input type="password" id="cf-token" value="${esc(c.token || "")}" autocomplete="off" placeholder="ここに github_pat_… を貼り付け"></label>
     <div class="quick"><button class="primary" id="cf-save">保存してつなぐ</button><button id="cf-back">戻る</button><span class="status" id="cf-msg"></span></div>
   </div>`;
   $("cf-save").onclick = async () => {
