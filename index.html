@@ -238,7 +238,16 @@ function renderSetup() {
     <div class="quick"><button class="primary" id="cf-save">保存してつなぐ</button><button id="cf-back">戻る</button><span class="status" id="cf-msg"></span></div>
   </div>`;
   $("cf-save").onclick = async () => {
-    setCfg({ owner: $("cf-owner").value.trim(), repo: $("cf-repo").value.trim(), token: $("cf-token").value.trim() });
+    // 全角の英数字は半角に、空白・見えない文字・改行は取り除く（日本語入力のまま貼った・コピーで余計な物が付いた時）
+    const clean = v => v.normalize("NFKC").replace(/[\s​-‍﻿]/g, "");
+    const token = clean($("cf-token").value);
+    if (!/^(github_pat_|ghp_)[A-Za-z0-9_]+$/.test(token)) {
+      $("cf-msg").textContent = /[^\x20-\x7E]/.test(token) ? "鍵に英数字以外の文字が入っています。GitHub の画面のコピーボタンでコピーし直して、そのまま貼り付けてください"
+        : "鍵は github_pat_ で始まる英数字です。GitHub の画面のコピーボタンでコピーし直して貼り付けてください";
+      return;
+    }
+    $("cf-token").value = token;
+    setCfg({ owner: clean($("cf-owner").value), repo: clean($("cf-repo").value), token });
     $("cf-msg").textContent = "つないでいます…"; S.cache = {};
     try {
       const t = await gh("days/index.json");
