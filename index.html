@@ -96,6 +96,45 @@ details.cl summary { cursor: pointer; font-size: .8rem; color: var(--muted); }
 .warn { color: var(--rough); font-size: .8rem; }
 .empty { text-align: center; color: var(--muted); padding: 24px 8px; font-size: .9rem; }
 .back { justify-self: start; }
+/* スマホで片手: 押す所は 40px 以上。一覧は左に大きい％、レースは馬の行の右で選ぶ */
+button { min-height: 40px; }
+.rc { grid-template-columns: 3.3rem minmax(0, 1fr); column-gap: 10px; align-items: center; min-height: 0; }
+.rc .bd { display: grid; gap: 3px; min-width: 0; }
+.rc.done { opacity: .55; }
+.rc.next { border-color: var(--accent); box-shadow: inset 4px 0 0 var(--accent); }
+.pc { display: grid; place-items: center; align-content: center; width: 3.3rem; height: 3.3rem; border-radius: 10px; background: var(--soft); line-height: 1; font-variant-numeric: tabular-nums; flex: none; }
+.pc b { font-size: 1.45rem; } .pc small { font-size: .68rem; }
+.pc.word { font-size: .82rem; font-weight: 700; }
+.pc.rough { color: var(--accent-fg); background: var(--rough); } .pc.calm { color: var(--calm); } .pc.mute { color: var(--fg); }
+.tag.nx { color: var(--accent); }
+.rc .l2 { flex-wrap: nowrap; gap: 3px; font-size: .76rem; overflow: hidden; }
+.mkn { display: inline-flex; align-items: center; flex: none; }
+.today .seg button, .pickb { min-height: 40px; }
+.pickb { text-align: left; } .pickb b { color: var(--rough); } .pickb small { color: var(--muted); }
+.nav { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.navs { display: flex; gap: 6px; }
+.rh { display: flex; gap: 10px; align-items: center; }
+.pick { display: grid; }
+.hr { display: grid; grid-template-columns: 1.7rem minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.hr.in { background: var(--soft); }
+.hr.hd { font-size: .72rem; color: var(--muted); padding-bottom: 2px; }
+.hn { min-width: 0; display: grid; }
+.hn .h1 { font-weight: 700; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hn small { color: var(--muted); font-size: .72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.mk { margin-right: 2px; }
+.pks { display: flex; gap: 5px; }
+.pk, .pkh { width: 42px; box-sizing: border-box; }
+.pk { height: 42px; padding: 0; border-radius: 8px; background: var(--card); color: var(--line); font-weight: 700; font-size: 1rem; }
+.pk[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.pkh { display: grid; text-align: center; line-height: 1.25; }
+.sum .seg button { min-width: 3rem; padding-inline: 6px; }
+.bar { position: sticky; bottom: 0; z-index: 2; display: flex; gap: 8px; align-items: center; background: var(--card); border-top: 1px solid var(--line); margin: 0 -12px -12px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px)); border-radius: 0 0 12px 12px; }
+.bar .bt { flex: 1; min-width: 0; display: grid; font-variant-numeric: tabular-nums; }
+.bar .bt b { font-size: 1.05rem; }
+.bar button.primary { padding-inline: 18px; }
+.more { display: grid; gap: 8px; margin-top: 8px; }
+.builder .seg button, .builder .quick button { min-height: 36px; padding: 4px 10px; font-size: .86rem; }
+.builder .quick { align-items: center; }
 .setup { display: grid; gap: 8px; }
 .setup input[type=text], .setup input[type=password] { background: var(--card); border: 2px solid var(--muted); font-size: 16px; min-height: 44px; border-radius: 8px; padding: 6px 8px; width: 100%; box-sizing: border-box; }
 .qr { background: #fff; padding: 10px; border-radius: 8px; justify-self: start; }
@@ -376,9 +415,11 @@ function shapeHtml(b) {
 }
 function quickFill(race, what) {
   const b = S.b; const pop = popOrder(race); const mk = race.mark || pop;
-  b.kind = "3連複";
+  if (what !== "keshi") b.kind = "3連複";
   if (what === "kaikata") { const k = kaikataShape(race); if (!k) return; b.way = k.way; b.box = k.box; b.cols = k.cols; }
   if (what === "mark6") { b.way = "box"; b.box = mk.slice(0, 6); }
+  if (what === "mark10") { b.way = "box"; b.box = mk.slice(0, 10); }
+  if (what === "keshi") { const ks = keshiNums(race, pop); b.box = b.box.filter(n => !ks.includes(n)); b.cols = b.cols.map(c => c.filter(n => !ks.includes(n))); return; }
   if (what === "mark3") { b.way = "form"; b.cols = [mk.slice(0, 3), mk.slice(0, 6), [...new Set([...mk.slice(0, 3), ...pop.slice(0, 10)])]]; }
   if (what === "clear") { b.cols = [[], [], []]; b.box = []; }
 }
@@ -450,35 +491,77 @@ function keshiNums(race, pop) {
 }
 function myBets(race) { return S.bets.filter(b => b.ds === S.data.ds && b.race === `${race.place}${race.r}R`); }
 
+function postMin(r) { return +r.post.slice(0, 2) * 60 + +r.post.slice(3, 5); }
+function clock() { const d = new Date(); const p = n => String(n).padStart(2, "0"); return { ds: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, hm: d.getHours() * 60 + d.getMinutes() }; }
+function untilText(m) { return m < 60 ? `あと${m}分` : `あと${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + "分" : ""}`; }
+function pOf(r) { return r.p10k ?? r.p10k_final ?? null; }
+// 左の大きい数字: 三連複が1万円以上になる確率。その数字が無いレースは判定の言葉
+function pcBox(r) {
+  const p = pOf(r);
+  if (p != null) return `<span class="pc ${p >= 0.595 ? "rough" : p < 0.3 ? "calm" : "mute"}" title="三連複が1万円以上になる確率。1勝クラス以上の平均は36%"><b>${Math.round(p * 100)}</b><small>%</small></span>`;
+  const j = r.judge_morning;
+  return `<span class="pc word ${j && !r.debut ? (j.label === "荒れる" ? "rough" : "calm") : "mute"}">${r.debut ? "新馬" : j ? esc(j.label) : "—"}</span>`;
+}
+function byTime(rs) { return rs.slice().sort((a, b) => (postMin(a) - postMin(b)) || (a.rid < b.rid ? -1 : 1)); }
+
 function renderYoso() {
   const v = $("v-yoso");
   if (!S.data) { v.innerHTML = `<p class="empty">予想のデータがまだありません。</p>`; return; }
   if (S.open) { renderRace(v, S.data.races.find(r => r.rid === S.open)); return; }
-  const rs = S.data.races;
+  const rs = byTime(S.data.races); const ck = clock(); const today = S.data.ds === ck.ds;
+  const done = r => !!r.result || (today && postMin(r) < ck.hm);
+  const next = today ? rs.find(r => !done(r)) : null;
+  const hasP = rs.some(r => pOf(r) != null);
+  let sort = "time"; try { sort = localStorage.getItem("keiba.sort") || "time"; } catch {}
+  if (!hasP) sort = "time";
+  const list = sort === "p" ? rs.slice().sort((a, b) => (done(a) - done(b)) || ((pOf(b) ?? -1) - (pOf(a) ?? -1))) : rs;
+  const picks = rs.filter(r => !done(r) && (pOf(r) ?? 0) >= 0.595).sort((a, b) => pOf(b) - pOf(a));
+  const dayBets = S.bets.filter(b => b.ds === S.data.ds);
+  const dayCost = dayBets.reduce((s, b) => s + b.cost, 0);
+  const settled = rs.filter(r => r.result && myBets(r).length);
+  const dayRet = settled.reduce((s, r) => s + myBets(r).reduce((t, b) => t + (betReturn(r, b) || 0), 0), 0);
+  const settledCost = settled.reduce((s, r) => s + myBets(r).reduce((t, b) => t + b.cost, 0), 0);
   v.innerHTML = `<div class="list">
-    <p class="note">${esc(S.data.ds)}　${rs.length}R。${rs.some(r => r.p10k != null || r.p10k_final != null) ? "<b>「1万円以上 ○%」は三連複が1万円以上になる確率（1勝クラス以上の平均 36%、過去では 60〜70% と出たレースの61%、70%以上の83%が実際に1万円以上）。</b>" : "荒れ方はオッズを使わずに判定しています（頭数・クラス・同じ条件の過去・出走馬の顔ぶれ）。オッズが動いても変わりません。"}作業1の買い目の人気順は朝のオッズなので、買う時の人気が変わっていたら合わせてください。${S.data.now_time ? `<b>「今」の付いたレースは ${esc(S.data.now_time.slice(11, 16))} 頃のオッズで印・荒れ方・作業1を出し直しています（荒れ方もオッズで判定）。</b>` : ""}${S.data.fixed ? "予想の固定 " + esc(S.data.fixed) : ""}</p>
-    ${rs.map(r => {
+    <div class="panel today">
+      ${hasP ? `<div class="row"><span class="lab">狙い目（三連複1万円以上が 60%以上・これから走るレース）</span>
+        ${picks.length ? `<div class="quick">${picks.map(r => `<button class="pickb" data-rid="${r.rid}"><b>${Math.round(pOf(r) * 100)}%</b> ${esc(r.place)}${r.r}R <small>${r.post}</small></button>`).join("")}</div>` : `<span class="note">いまは 60%以上のレースがありません。</span>`}</div>
+      <div class="seg" role="group" aria-label="並び"><button data-sort="time" aria-pressed="${sort === "time"}">発走順</button><button data-sort="p" aria-pressed="${sort === "p"}">荒れそうな順</button></div>` : ""}
+      ${dayBets.length ? `<p class="mine ${dayRet ? "hit" : ""}">この日の記録 ${dayBets.length}件 ${yen(dayCost)}${settled.length ? `　結果が出た分 ${yen(settledCost)} → ${yen(dayRet)}` : ""}</p>` : ""}
+      <details class="cl"><summary>数字の読み方</summary><p class="note">${esc(S.data.ds)}　${rs.length}R。${hasP ? "<b>左の大きい数字は、三連複が1万円以上になる確率（1勝クラス以上の平均 36%、過去では 60〜70% と出たレースの61%、70%以上の83%が実際に1万円以上）。</b>" : "荒れ方はオッズを使わずに判定しています（頭数・クラス・同じ条件の過去・出走馬の顔ぶれ）。オッズが動いても変わりません。"}作業1の買い目の人気順は朝のオッズなので、買う時の人気が変わっていたら合わせてください。${S.data.now_time ? `<b>「今」の付いたレースは ${esc(S.data.now_time.slice(11, 16))} 頃のオッズで印・荒れ方・作業1を出し直しています（荒れ方もオッズで判定）。</b>` : ""}${S.data.fixed ? "予想の固定 " + esc(S.data.fixed) : ""}</p></details>
+    </div>
+    ${list.map(r => {
       const mb = myBets(r); const cost = mb.reduce((s, b) => s + b.cost, 0);
       const ret = r.result ? mb.reduce((s, b) => s + (betReturn(r, b) || 0), 0) : null;
       const res = r.result ? `${r.result.top3.join("-")}（${r.result.top3.map(n => r.result.ninki[n]).join("-")}人気） 三連複 ${yen(r.result.fuku3[0][1])}` : "";
-      return `<button class="rc" data-rid="${r.rid}">
-        <span class="l1"><span class="t">${r.post}</span><span class="nm">${esc(r.place)}${r.r}R</span><span class="sub">${esc(r.title)}・${r.surf}${r.dist}・${r.heads}頭</span>${judgeTag(r)}${r.now ? `<span class="tag mute">今</span>` : ""}</span>
-        ${r.mark ? `<span class="l2">印 ${r.mark.slice(0, 6).map((n, i) => MK[i] + chipNum(n, r.heads)).join(" ")}</span>` : ""}
-        ${(() => { const k = kaikataShape(r); return k ? `<span class="sub kshape">作業1: ${esc(shapeText(k))}（${combosOf(k).length}点）</span>` : ""; })()}
+      return `<button class="rc${done(r) ? " done" : ""}${next === r ? " next" : ""}" data-rid="${r.rid}">
+        ${pcBox(r)}
+        <span class="bd">
+        <span class="l1"><span class="t">${r.post}</span><span class="nm">${esc(r.place)}${r.r}R</span>${next === r ? `<span class="tag nx">次 ${untilText(postMin(r) - ck.hm)}</span>` : ""}${r.now ? `<span class="tag mute">今</span>` : ""}</span>
+        <span class="sub">${esc(r.title)}・${r.surf}${r.dist}・${r.heads}頭</span>
+        ${r.mark ? `<span class="l2">${r.mark.slice(0, 6).map((n, i) => `<span class="mkn">${MK[i]}${chipNum(n, r.heads)}</span>`).join("")}</span>` : ""}
         ${keshiNums(r).length ? `<span class="sub">消し ${keshiNums(r).join("・")}</span>` : ""}
         ${res ? `<span class="sub">結果 ${res}</span>` : ""}
         ${mb.length ? `<span class="mine ${ret ? "hit" : ""}">記録 ${mb.length}件 ${yen(cost)}${ret !== null ? " → " + yen(ret) : ""}</span>` : ""}
+        </span>
       </button>`; }).join("")}
   </div>`;
-  v.querySelectorAll(".rc").forEach(el => el.addEventListener("click", () => { history.pushState({ r: 1 }, ""); S.open = el.dataset.rid; S.b = { kind: "3連複", way: "form", cols: [[], [], []], box: [], unit: S.b.unit || 100 }; render(); window.scrollTo(0, 0); }));
+  v.querySelectorAll("[data-rid]").forEach(el => el.addEventListener("click", () => { history.pushState({ r: 1 }, ""); S.open = el.dataset.rid; S.b = { kind: "3連複", way: "form", cols: [[], [], []], box: [], unit: S.b.unit || 100 }; render(); window.scrollTo(0, 0); }));
+  v.querySelectorAll("[data-sort]").forEach(el => el.onclick = () => { try { localStorage.setItem("keiba.sort", el.dataset.sort); } catch {} render(); });
 }
+// 一覧の「次 あと○分」と発走済みの薄い表示を進める
+setInterval(() => { if (S.tab === "yoso" && !S.open && S.data && S.data.ds === clock().ds) renderYoso(); }, 60000);
 
 function renderRace(v, race) {
   const res = race.result; const pop = popOrder(race); const mk = race.mark || [];
-  const hs = race.horses.filter(h => !h.cancel);
+  const hs = race.horses.filter(h => !h.cancel).sort((a, c) => a.num - c.num);   // 馬番順
   const ks = keshiNums(race, pop);
   const b = S.b; const combos = combosOf(b); const unit = Math.max(100, Math.round((+b.unit || 100) / 100) * 100);
-  const rows = hs.slice().sort((a, c) => a.num - c.num).map(h => {
+  const need = needOf(b.kind); const ordered = b.kind === "3連単" || b.kind === "馬単";
+  const colIds = b.way === "box" ? ["box"] : [0, 1, 2].slice(0, need);
+  const selOf = id => id === "box" ? b.box : b.cols[id];
+  const colLab = id => colIds.length === 1 ? "選ぶ" : (id + 1) + (ordered ? "着" : "頭目");
+  const rs = byTime(S.data.races); const ix = rs.indexOf(race); const prev = rs[ix - 1], nxt = rs[ix + 1];
+  const rows = hs.map(h => {
     const mi = mk.indexOf(h.num); const md = race.model ? race.model.indexOf(h.num) : -1;
     const rk = res ? res.rank[h.num] : null;
     return `<tr><td>${chipNum(h.num, race.heads)}</td><td class="nmc">${esc(h.name)}<small>${esc(h.jockey)}・${h.runs}走</small>${ks.includes(h.num) ? `<small class="leak">消し: ${esc((h.bad || []).join("／"))}</small>` : ""}</td>
@@ -486,46 +569,63 @@ function renderRace(v, race) {
       <td class="r">${md >= 0 ? md + 1 : ""}</td>${race.p_misho ? `<td class="r">${race.p_misho[h.num] != null ? Math.round(race.p_misho[h.num] * 100) + "%" : ""}</td>` : ""}
       ${res ? `<td class="r ${rk && rk <= 3 ? "res1" : ""}">${rk ?? "除"}</td><td class="r">${res.odds[h.num] ?? ""}</td>` : ""}</tr>`;
   }).join("");
-  const order = hs.map(h => h.num).sort((a, c) => a - c);   // 馬番順
-  const chipRow = (sel, idx) => `<div class="chips">${order.map(n => `<button class="chip" data-col="${idx}" data-n="${n}" aria-pressed="${sel.includes(n)}">${chipNum(n, race.heads)}<small>${ks.includes(n) ? "消" : ""}${mk.indexOf(n) >= 0 && mk.indexOf(n) < 6 ? MK[mk.indexOf(n)] : ""}${pop.indexOf(n) + 1}人</small></button>`).join("")}</div>`;
-  const need = b.kind === "3連複" || b.kind === "3連単" ? 3 : (b.kind === "単勝" || b.kind === "複勝") ? 1 : 2;
+  // 馬の行の右のボタンで選ぶ（投票サイトのフォーメーションと同じ並び）
+  const pick = hs.map(h => {
+    const mi = mk.indexOf(h.num); const rk = res ? res.rank[h.num] : null; const od = res ? res.odds[h.num] : h.odds; const pp = pop.indexOf(h.num) + 1;
+    return `<div class="hr${rk && rk <= 3 ? " in" : ""}">${chipNum(h.num, race.heads)}
+      <div class="hn"><span class="h1">${mi >= 0 && mi < 6 ? `<b class="mk">${MK[mi]}</b>` : ""}${esc(h.name)}${ks.includes(h.num) ? `<b class="leak"> 消</b>` : ""}</span>
+        <small>${od ?? "-"}倍${pp ? "・" + pp + "番人気" : ""}・${esc(h.jockey)}${rk ? `・<b class="${rk <= 3 ? "res1" : ""}">${rk}着</b>` : ""}</small></div>
+      <div class="pks">${colIds.map(id => `<button class="pk" data-col="${id}" data-n="${h.num}" aria-pressed="${selOf(id).includes(h.num)}" aria-label="${h.num}番 ${esc(h.name)} ${colLab(id)}">${colIds.length === 1 ? "✓" : id + 1}</button>`).join("")}</div></div>`;
+  }).join("");
   const mb = myBets(race);
   const cmp = res ? compare(race, mb) : null;
+  const kk = kaikataShape(race);
   v.innerHTML = `<div class="panel">
-    <button class="back" id="back">← レース一覧</button>
-    <div><h3>${race.post} ${esc(race.place)}${race.r}R ${esc(race.title)}</h3>
-      <p class="note">${race.surf}${race.dist}m・${race.heads}頭　${judgeTag(race)}${kaikataShape(race) ? `　作業1の買い方: ${esc(shapeText(kaikataShape(race)))}（${combosOf(kaikataShape(race)).length}点）` : ""}</p>${areText(race) ? `<p class="note">${areText(race)}</p>` : ""}
-      ${res ? `<p class="note"><b class="res1">結果 ${res.top3.join("-")}</b>（${res.top3.map(n => res.ninki[n]).join("-")}人気）三連複 ${yen(res.fuku3[0][1])}・馬場 ${esc(res.going)}</p>` : ""}</div>
-    <div class="tw"><table><thead><tr><th>番</th><th>馬名</th><th class="r">${race.now ? "今のオッズ" : "朝オッズ"}</th><th class="r">人気</th><th>印</th><th class="r">モデル</th>${race.p_misho ? `<th class="r">未勝利</th>` : ""}${res ? `<th class="r">着</th><th class="r">確定</th>` : ""}</tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="note">並びは馬番順。人気は${res ? "確定オッズ" : race.now ? esc(race.odds_time.slice(11, 16)) + " のオッズ" : "朝のオッズ"}の順。${race.now && !res && race.mark_fixed ? "固定時の印6頭 " + race.mark_fixed.join("・") + (race.judge_fixed ? "・固定時の判定 " + race.judge_fixed.label : "") + "。" : ""}印＝合成（モデル×オッズ）の順、モデル＝オッズを見ない順位。${ks.length ? `<b class="leak">消</b>＝7番人気以下で悪い印が重なった馬（過去の確かめで3着内 2.9%・複勝回収 43%。7番人気以下の全体は 8.7%・69%）。人気が変わると付き方も変わります。` : ""}</p>
+    <div class="nav"><button class="back" id="back">← 一覧</button><span class="navs">${prev ? `<button data-go="${prev.rid}">‹ ${esc(prev.place)}${prev.r}R</button>` : ""}${nxt ? `<button data-go="${nxt.rid}">${esc(nxt.place)}${nxt.r}R ›</button>` : ""}</span></div>
+    <div class="rh">${pcBox(race)}<div><h3>${race.post} ${esc(race.place)}${race.r}R ${esc(race.title)}</h3>
+      <p class="note">${race.surf}${race.dist}m・${race.heads}頭${pOf(race) != null ? "・左は三連複が1万円以上になる確率（平均 36%）" : ""}${race.now ? `・${esc(race.odds_time.slice(11, 16))} のオッズ` : ""}</p></div></div>
+    ${res ? `<p class="note"><b class="res1">結果 ${res.top3.join("-")}</b>（${res.top3.map(n => res.ninki[n]).join("-")}人気）三連複 ${yen(res.fuku3[0][1])}・馬場 ${esc(res.going)}</p>` : ""}
+    ${ks.length ? `<p class="note"><b class="leak">消し ${ks.join("・")}</b>（7番人気以下で悪い印が重なった馬）</p>` : ""}
   </div>
   <div class="panel builder">
     <h2>買い目をつくる</h2>
     <div class="seg" role="group" aria-label="券種">${["3連複", "3連単", "馬連", "ワイド", "単勝", "複勝"].map(k => `<button data-kind="${k}" aria-pressed="${b.kind === k}">${k}</button>`).join("")}</div>
     <div class="seg" role="group" aria-label="買い方"><button data-way="form" aria-pressed="${b.way === "form"}">フォーメーション</button><button data-way="box" aria-pressed="${b.way === "box"}">ボックス</button></div>
-    <div class="quick"><span class="note">すぐ入れる:</span>${race.judge_morning ? `<button data-q="kaikata">作業1の買い方</button>` : ""}${race.mark ? `<button data-q="mark6">印6頭ボックス</button><button data-q="mark3">印3頭→印6→人気10</button>` : ""}<button data-q="clear">選び直す</button></div>
-    ${b.way === "box" ? `<div class="row"><span class="lab">ボックスの馬</span>${chipRow(b.box, "box")}</div>`
-      : [0, 1, 2].slice(0, need).map(i => `<div class="row"><span class="lab">${need === 1 ? "馬" : (i + 1) + (b.kind === "3連単" || b.kind === "馬単" ? "着" : "頭目")}</span>${chipRow(b.cols[i], i)}</div>`).join("")}
-    <div class="sum"><span>1点</span><input type="number" id="unit" min="100" step="100" value="${unit}" aria-label="1点の金額" style="width:6.5rem">円
-      <span><b>${combos.length}点</b>　<b>${yen(combos.length * unit)}</b></span></div>
+    <div class="quick"><span class="note">すぐ入れる:</span>${race.mark ? `<button data-q="mark6">印6頭ボックス</button><button data-q="mark10">印10頭ボックス</button><button data-q="mark3">印3頭→印6→人気10</button>` : ""}${kk ? `<button data-q="kaikata">作業1の買い方</button>` : ""}${ks.length ? `<button data-q="keshi">消しを外す</button>` : ""}<button data-q="clear">選び直す</button></div>
+    <div class="pick">
+      <div class="hr hd"><span></span><div class="hn">馬番順・印・オッズ・人気</div><div class="pks">${colIds.map(id => `<span class="pkh">${colLab(id)}<small>${selOf(id).length}頭</small></span>`).join("")}</div></div>
+      ${pick}
+    </div>
+    <div class="sum"><span>1点</span><span class="seg">${[100, 200, 300, 500, 1000].map(u => `<button data-unit="${u}" aria-pressed="${unit === u}">${u}</button>`).join("")}</span><input type="number" id="unit" min="100" step="100" value="${unit}" aria-label="1点の金額" style="width:5.5rem">円</div>
     ${combos.length ? `<div class="shape" id="shape">${shapeHtml(b)}</div>
       <p class="note">投票サイトでは、この形（${b.way === "box" ? "ボックス" : "フォーメーション"}）のまま入れてください。1点ずつ選ぶと組が漏れます。</p>
-      <details class="cl"><summary>組の一覧（確認用・${combos.length}点）</summary><div class="combos">${combos.map(c => c.join("-")).join("　")}</div></details>
-      <div class="quick"><button id="copy">形をコピー</button><button class="primary" id="save" ${S.dbOk ? "" : "disabled"}>この買い目を記録</button><span class="status" id="savemsg"></span></div>` : `<p class="note">馬を押して選ぶと、点数と買い目の形が出ます。</p>`}
+      <details class="cl"><summary>組の一覧（確認用・${combos.length}点）</summary><div class="combos">${combos.map(c => c.join("-")).join("　")}</div></details>` : ""}
+    <div class="bar"><span class="bt">${combos.length ? `<b>${combos.length}点　${yen(combos.length * unit)}</b>` : `<span class="note">馬の右のボタンで選ぶと、点数と金額が出ます。</span>`}<span class="status" id="savemsg"></span></span>
+      ${combos.length ? `<button id="copy">コピー</button><button class="primary" id="save" ${S.dbOk ? "" : "disabled"}>記録する</button>` : ""}</div>
   </div>
   <div class="panel">
     <h2>このレースの記録</h2>
     ${mb.length ? `<div class="bets">${mb.map(bt => { const r = betReturn(race, bt); const lk = leakOf(race, bt); return `<div class="bet"><span class="d">${esc(bt.shape ? shapeText(bt.shape) : bt.kind + " " + bt.desc)}（${bt.items.length}点 ${yen(bt.cost)}）<span class="note">${bt.source === "paste" ? "貼り付け" : "アプリ"}</span>${lk ? `<br><span class="leak">${esc(lk)}</span>` : ""}</span>${r !== null ? `<b class="${r ? "res1" : ""}">${yen(r)}</b>` : ""}<button data-del="${bt.id}">消す</button></div>`; }).join("")}</div>` : `<p class="note">まだ記録がありません。</p>`}
     ${cmp ? `<p class="note">同じ形で比べると（三連複）: 本人 ${yen(cmp.me)}／人気版 ${yen(cmp.pop)}${cmp.mark !== null ? `／印版 ${yen(cmp.mark)}` : ""}${cmp.model !== null ? `／モデル版 ${yen(cmp.model)}` : ""}。選んだ3頭 ${cmp.picks.join(" ")} は3着内に${cmp.picksIn}頭（人気上位3頭は${cmp.pop3In}頭）</p>` : ""}
+  </div>
+  <div class="panel">
+    <details class="cl"><summary>くわしい数字（表・過去の似たレース・作業1）</summary>
+    <div class="more">
+    <p class="note">${judgeTag(race)}${kk ? `　作業1の買い方: ${esc(shapeText(kk))}（${combosOf(kk).length}点）` : ""}</p>${areText(race) ? `<p class="note">${areText(race)}</p>` : ""}
+    <div class="tw"><table><thead><tr><th>番</th><th>馬名</th><th class="r">${race.now ? "今のオッズ" : "朝オッズ"}</th><th class="r">人気</th><th>印</th><th class="r">モデル</th>${race.p_misho ? `<th class="r">未勝利</th>` : ""}${res ? `<th class="r">着</th><th class="r">確定</th>` : ""}</tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="note">並びは馬番順。人気は${res ? "確定オッズ" : race.now ? esc(race.odds_time.slice(11, 16)) + " のオッズ" : "朝のオッズ"}の順。${race.now && !res && race.mark_fixed ? "固定時の印6頭 " + race.mark_fixed.join("・") + (race.judge_fixed ? "・固定時の判定 " + race.judge_fixed.label : "") + "。" : ""}印＝合成（モデル×オッズ）の順、モデル＝オッズを見ない順位。${ks.length ? `<b class="leak">消</b>＝7番人気以下で悪い印が重なった馬（過去の確かめで3着内 2.9%・複勝回収 43%。7番人気以下の全体は 8.7%・69%）。人気が変わると付き方も変わります。` : ""}</p>
+    </div></details>
   </div>`;
   $("back").onclick = () => { history.back(); };
+  v.querySelectorAll("[data-go]").forEach(el => el.onclick = () => { S.open = el.dataset.go; S.b = { kind: "3連複", way: "form", cols: [[], [], []], box: [], unit: S.b.unit || 100 }; render(); window.scrollTo(0, 0); });
   v.querySelectorAll("[data-kind]").forEach(el => el.onclick = () => { b.kind = el.dataset.kind; render(); });
   v.querySelectorAll("[data-way]").forEach(el => el.onclick = () => { b.way = el.dataset.way; render(); });
   v.querySelectorAll("[data-q]").forEach(el => el.onclick = () => { quickFill(race, el.dataset.q); render(); });
-  v.querySelectorAll(".chip").forEach(el => el.onclick = () => {
+  v.querySelectorAll(".pk").forEach(el => el.onclick = () => {
     const n = +el.dataset.n, col = el.dataset.col; const arr = col === "box" ? b.box : b.cols[+col];
     const i = arr.indexOf(n); if (i >= 0) arr.splice(i, 1); else arr.push(n); render();
   });
+  v.querySelectorAll("[data-unit]").forEach(el => el.onclick = () => { b.unit = +el.dataset.unit; render(); });
   const u = $("unit"); if (u) u.onchange = () => { b.unit = Math.max(100, Math.round(+u.value / 100) * 100) || 100; render(); };
   const cp = $("copy"); if (cp) cp.onclick = async () => {
     const txt = `${race.place}${race.r}R ${shapeText(b)}　${combos.length}点 1点${yen(unit)} 計${yen(combos.length * unit)}`;
@@ -533,10 +633,10 @@ function renderRace(v, race) {
     catch { const r = document.createRange(); r.selectNodeContents($("shape")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); $("savemsg").textContent = "選択しました。コピーしてください"; }
   };
   const sv = $("save"); if (sv) sv.onclick = async () => {
-    sv.disabled = true;
+    sv.disabled = true; $("savemsg").textContent = "記録しています…";
     const ok = await saveBet({ ds: S.data.ds, race: `${race.place}${race.r}R`, rid: race.rid, kind: b.kind, desc: shapeText(b), shape: { kind: b.kind, way: b.way, cols: b.cols.map(c => [...c]), box: [...b.box] }, source: "app",
       items: combos.map(c => ({ c, u: unit })), cost: combos.length * unit, savedAt: new Date().toISOString() });
-    if (ok) { $("savemsg") && ($("savemsg").textContent = "記録しました"); }
+    if ($("savemsg")) $("savemsg").textContent = ok ? "記録しました" : "";
     sv.disabled = false;
   };
   v.querySelectorAll("[data-del]").forEach(el => el.onclick = () => {
