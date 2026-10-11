@@ -120,8 +120,13 @@ button { min-height: 40px; }
 .hr.hd { font-size: .72rem; color: var(--muted); padding-bottom: 2px; }
 .hn { min-width: 0; display: grid; }
 .hn .h1 { font-weight: 700; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hn small { color: var(--muted); font-size: .72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.hn small { color: var(--muted); font-size: .72rem; line-height: 1.35; font-variant-numeric: tabular-nums; }
 .mk { margin-right: 2px; }
+.mk.rk { display: inline-grid; place-items: center; min-width: 1.25em; height: 1.25em; border-radius: 99px; background: var(--soft); color: var(--muted); font-size: .72rem; vertical-align: 1px; }
+.wp { color: var(--fg); margin-right: 4px; }
+.hn small span, .hn small b { white-space: nowrap; display: inline-block; margin-right: 4px; }
+.builder .seg { align-items: center; }
+td small { color: var(--muted); margin-left: 3px; }
 .pks { display: flex; gap: 5px; }
 .pk, .pkh { width: 42px; box-sizing: border-box; }
 .pk { height: 42px; padding: 0; border-radius: 8px; background: var(--card); color: var(--line); font-weight: 700; font-size: 1rem; }
@@ -553,7 +558,15 @@ setInterval(() => { if (S.tab === "yoso" && !S.open && S.data && S.data.ds === c
 
 function renderRace(v, race) {
   const res = race.result; const pop = popOrder(race); const mk = race.mark || [];
-  const hs = race.horses.filter(h => !h.cancel).sort((a, c) => a.num - c.num);   // 馬番順
+  // 並び: 馬番順（初めの形）／予想順（勝率＝モデル×オッズ）／モデル順（オッズを見ない）／人気順
+  const hasP = race.horses.some(h => h.pb != null);
+  let hsort = "num"; try { hsort = localStorage.getItem("keiba.hsort") || "num"; } catch {}
+  if (!hasP && (hsort === "yoso" || hsort === "model")) hsort = "num";
+  const rankBy = k => { const o = race.horses.filter(h => !h.cancel && h[k] != null).sort((a, c) => (c[k] - a[k]) || a.num - c.num).map(h => h.num); return n => o.indexOf(n) + 1; };
+  const yr = rankBy("pb"), mr = rankBy("pm"); const big = 99;
+  const sortKey = { num: h => h.num, yoso: h => yr(h.num) || big, model: h => mr(h.num) || big, pop: h => pop.indexOf(h.num) + 1 || big }[hsort];
+  const hs = race.horses.filter(h => !h.cancel).sort((a, c) => (sortKey(a) - sortKey(c)) || a.num - c.num);
+  const pc1 = p => p >= 0.095 ? Math.round(p * 100) + "%" : (p * 100).toFixed(1) + "%";
   const ks = keshiNums(race, pop);
   const b = S.b; const combos = combosOf(b); const unit = Math.max(100, Math.round((+b.unit || 100) / 100) * 100);
   const need = needOf(b.kind); const ordered = b.kind === "3連単" || b.kind === "馬単";
@@ -561,20 +574,20 @@ function renderRace(v, race) {
   const selOf = id => id === "box" ? b.box : b.cols[id];
   const colLab = id => colIds.length === 1 ? "選ぶ" : (id + 1) + (ordered ? "着" : "頭目");
   const rs = byTime(S.data.races); const ix = rs.indexOf(race); const prev = rs[ix - 1], nxt = rs[ix + 1];
-  const rows = hs.map(h => {
+  const rows = hs.slice().sort((a, c) => a.num - c.num).map(h => {
     const mi = mk.indexOf(h.num); const md = race.model ? race.model.indexOf(h.num) : -1;
     const rk = res ? res.rank[h.num] : null;
     return `<tr><td>${chipNum(h.num, race.heads)}</td><td class="nmc">${esc(h.name)}<small>${esc(h.jockey)}・${h.runs}走</small>${ks.includes(h.num) ? `<small class="leak">消し: ${esc((h.bad || []).join("／"))}</small>` : ""}</td>
       <td class="r">${h.odds ?? "-"}</td><td class="r">${h.ninki ?? "-"}</td><td>${mi >= 0 && mi < 6 ? MK[mi] : mi >= 0 ? mi + 1 : ""}${ks.includes(h.num) ? `<b class="leak">消</b>` : ""}</td>
-      <td class="r">${md >= 0 ? md + 1 : ""}</td>${race.p_misho ? `<td class="r">${race.p_misho[h.num] != null ? Math.round(race.p_misho[h.num] * 100) + "%" : ""}</td>` : ""}
+      <td class="r">${h.pb != null ? pc1(h.pb) : ""}</td><td class="r">${md >= 0 ? md + 1 : ""}${h.pm != null ? `<small>${pc1(h.pm)}</small>` : ""}</td>${race.p_misho ? `<td class="r">${race.p_misho[h.num] != null ? Math.round(race.p_misho[h.num] * 100) + "%" : ""}</td>` : ""}
       ${res ? `<td class="r ${rk && rk <= 3 ? "res1" : ""}">${rk ?? "除"}</td><td class="r">${res.odds[h.num] ?? ""}</td>` : ""}</tr>`;
   }).join("");
   // 馬の行の右のボタンで選ぶ（投票サイトのフォーメーションと同じ並び）
   const pick = hs.map(h => {
     const mi = mk.indexOf(h.num); const rk = res ? res.rank[h.num] : null; const od = res ? res.odds[h.num] : h.odds; const pp = pop.indexOf(h.num) + 1;
     return `<div class="hr${rk && rk <= 3 ? " in" : ""}">${chipNum(h.num, race.heads)}
-      <div class="hn"><span class="h1">${mi >= 0 && mi < 6 ? `<b class="mk">${MK[mi]}</b>` : ""}${esc(h.name)}${ks.includes(h.num) ? `<b class="leak"> 消</b>` : ""}</span>
-        <small>${od ?? "-"}倍${pp ? "・" + pp + "番人気" : ""}・${esc(h.jockey)}${rk ? `・<b class="${rk <= 3 ? "res1" : ""}">${rk}着</b>` : ""}</small></div>
+      <div class="hn"><span class="h1">${mi >= 0 && mi < 6 ? `<b class="mk">${MK[mi]}</b>` : mi >= 0 && hasP ? `<b class="mk rk">${mi + 1}</b>` : ""}${esc(h.name)}${ks.includes(h.num) ? `<b class="leak"> 消</b>` : ""}</span>
+        <small>${hsort === "model" && h.pm != null ? `<b class="wp">モデル${mr(h.num)}位 ${pc1(h.pm)}</b> ` : h.pb != null ? `<b class="wp">勝率 ${pc1(h.pb)}</b> ` : ""}<span>${pp ? pp + "番人気 " : ""}${od ?? "-"}倍</span> <span>${esc(h.jockey)}</span>${rk ? `・<b class="${rk <= 3 ? "res1" : ""}">${rk}着</b>` : ""}</small></div>
       <div class="pks">${colIds.map(id => `<button class="pk" data-col="${id}" data-n="${h.num}" aria-pressed="${selOf(id).includes(h.num)}" aria-label="${h.num}番 ${esc(h.name)} ${colLab(id)}">${colIds.length === 1 ? "✓" : id + 1}</button>`).join("")}</div></div>`;
   }).join("");
   const mb = myBets(race);
@@ -592,8 +605,9 @@ function renderRace(v, race) {
     <div class="seg" role="group" aria-label="券種">${["3連複", "3連単", "馬連", "ワイド", "単勝", "複勝"].map(k => `<button data-kind="${k}" aria-pressed="${b.kind === k}">${k}</button>`).join("")}</div>
     <div class="seg" role="group" aria-label="買い方"><button data-way="form" aria-pressed="${b.way === "form"}">フォーメーション</button><button data-way="box" aria-pressed="${b.way === "box"}">ボックス</button></div>
     <div class="quick"><span class="note">すぐ入れる:</span>${race.mark ? `<button data-q="mark6">印6頭ボックス</button><button data-q="mark10">印10頭ボックス</button><button data-q="mark3">印3頭→印6→人気10</button>` : ""}${kk ? `<button data-q="kaikata">作業1の買い方</button>` : ""}${ks.length ? `<button data-q="keshi">消しを外す</button>` : ""}<button data-q="clear">選び直す</button></div>
+    <div class="seg" role="group" aria-label="馬の並び"><span class="note">並び:</span>${[["num", "馬番順"], ...(hasP ? [["yoso", "予想順"], ["model", "モデル順"]] : []), ["pop", "人気順"]].map(([k, t]) => `<button data-hsort="${k}" aria-pressed="${hsort === k}">${t}</button>`).join("")}</div>
     <div class="pick">
-      <div class="hr hd"><span></span><div class="hn">馬番順・印・オッズ・人気</div><div class="pks">${colIds.map(id => `<span class="pkh">${colLab(id)}<small>${selOf(id).length}頭</small></span>`).join("")}</div></div>
+      <div class="hr hd"><span></span><div class="hn">${hasP ? "名前の前＝予想順" : "印・オッズ・人気"}</div><div class="pks">${colIds.map(id => `<span class="pkh">${colLab(id)}<small>${selOf(id).length}頭</small></span>`).join("")}</div></div>
       ${pick}
     </div>
     <div class="sum"><span>1点</span><span class="seg">${[100, 200, 300, 500, 1000].map(u => `<button data-unit="${u}" aria-pressed="${unit === u}">${u}</button>`).join("")}</span><input type="number" id="unit" min="100" step="100" value="${unit}" aria-label="1点の金額" style="width:5.5rem">円</div>
@@ -612,8 +626,8 @@ function renderRace(v, race) {
     <details class="cl"><summary>くわしい数字（表・過去の似たレース・作業1）</summary>
     <div class="more">
     <p class="note">${judgeTag(race)}${kk ? `　作業1の買い方: ${esc(shapeText(kk))}（${combosOf(kk).length}点）` : ""}</p>${areText(race) ? `<p class="note">${areText(race)}</p>` : ""}
-    <div class="tw"><table><thead><tr><th>番</th><th>馬名</th><th class="r">${race.now ? "今のオッズ" : "朝オッズ"}</th><th class="r">人気</th><th>印</th><th class="r">モデル</th>${race.p_misho ? `<th class="r">未勝利</th>` : ""}${res ? `<th class="r">着</th><th class="r">確定</th>` : ""}</tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="note">並びは馬番順。人気は${res ? "確定オッズ" : race.now ? esc(race.odds_time.slice(11, 16)) + " のオッズ" : "朝のオッズ"}の順。${race.now && !res && race.mark_fixed ? "固定時の印6頭 " + race.mark_fixed.join("・") + (race.judge_fixed ? "・固定時の判定 " + race.judge_fixed.label : "") + "。" : ""}印＝合成（モデル×オッズ）の順、モデル＝オッズを見ない順位。${ks.length ? `<b class="leak">消</b>＝7番人気以下で悪い印が重なった馬（過去の確かめで3着内 2.9%・複勝回収 43%。7番人気以下の全体は 8.7%・69%）。人気が変わると付き方も変わります。` : ""}</p>
+    <div class="tw"><table><thead><tr><th>番</th><th>馬名</th><th class="r">${race.now ? "今のオッズ" : "朝オッズ"}</th><th class="r">人気</th><th>印</th><th class="r">勝率</th><th class="r">モデル</th>${race.p_misho ? `<th class="r">未勝利</th>` : ""}${res ? `<th class="r">着</th><th class="r">確定</th>` : ""}</tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="note">並びは馬番順。人気は${res ? "確定オッズ" : race.now ? esc(race.odds_time.slice(11, 16)) + " のオッズ" : "朝のオッズ"}の順。${race.now && !res && race.mark_fixed ? "固定時の印6頭 " + race.mark_fixed.join("・") + (race.judge_fixed ? "・固定時の判定 " + race.judge_fixed.label : "") + "。" : ""}勝率＝合成（モデル×オッズ）で出した1着になる確率で、印と予想順はその順。モデル＝オッズを見ない順位と勝率。予想順は人気に近く、モデル順は過去の確かめで人気順より当たっていません。${ks.length ? `<b class="leak">消</b>＝7番人気以下で悪い印が重なった馬（過去の確かめで3着内 2.9%・複勝回収 43%。7番人気以下の全体は 8.7%・69%）。人気が変わると付き方も変わります。` : ""}</p>
     </div></details>
   </div>`;
   $("back").onclick = () => { history.back(); };
@@ -625,6 +639,7 @@ function renderRace(v, race) {
     const n = +el.dataset.n, col = el.dataset.col; const arr = col === "box" ? b.box : b.cols[+col];
     const i = arr.indexOf(n); if (i >= 0) arr.splice(i, 1); else arr.push(n); render();
   });
+  v.querySelectorAll("[data-hsort]").forEach(el => el.onclick = () => { try { localStorage.setItem("keiba.hsort", el.dataset.hsort); } catch {} render(); });
   v.querySelectorAll("[data-unit]").forEach(el => el.onclick = () => { b.unit = +el.dataset.unit; render(); });
   const u = $("unit"); if (u) u.onchange = () => { b.unit = Math.max(100, Math.round(+u.value / 100) * 100) || 100; render(); };
   const cp = $("copy"); if (cp) cp.onclick = async () => {
