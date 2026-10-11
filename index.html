@@ -496,14 +496,24 @@ function keshiNums(race, pop) {
   pop = pop || popOrder(race);
   return race.horses.filter(h => !h.cancel && h.cnt != null && h.cnt <= -3 && pop.indexOf(h.num) + 1 >= 7).map(h => h.num).sort((a, b) => a - b);
 }
-// 穴候補: 今の人気で7番人気以下の馬を、展開シミュレーション（オッズ無し）の3着内率の順に3頭まで。展開の順位が10位以下の馬は入れない
-// （過去の確かめ: 7番人気以下の3着内率は 展開1〜3位 16.5%・4〜9位 12〜13%・10位以下 5.6%、全体 8.5%）
+// 朝からの売れ方: 今（結果が出た後は確定）の単勝 ÷ 朝の単勝。0.9以下＝売れた、1.1超＝売れていない。朝のオッズしか無い間は null
+function oddsMove(race, h) {
+  const cur = race.result ? race.result.odds[h.num] : h.odds;
+  return (race.now || race.result) && h.om && cur ? cur / h.om : null;
+}
+function morningRank(race) { const o = race.horses.filter(h => !h.cancel && h.om).sort((a, b) => (a.om - b.om) || a.num - b.num).map(h => h.num); return n => o.indexOf(n) + 1; }
+// 穴候補。オッズが動いた後: 朝7番人気以下で、朝から売れた・ほぼ同じ馬（今のオッズが朝の1.1倍以下）を売れた順に5頭まで。
+//   過去4日・朝7番人気以下の確かめ: 売れた 122頭は3着内 20〜26%・複勝 77〜93%、売れていない 588頭は 4〜5%・31〜43%（件数が少なく未確定）
+// 朝のオッズしか無い間: 7番人気以下を展開シミュレーションの3着内率の順に3頭まで（展開10位以下は入れない）
 function anaList(race, pop) {
   pop = pop || popOrder(race);
-  const hs = race.horses.filter(h => !h.cancel && h.s3 != null); if (!hs.length) return [];
-  const o = hs.slice().sort((a, b) => (b.sw - a.sw) || a.num - b.num).map(h => h.num);
-  return hs.filter(h => pop.indexOf(h.num) + 1 >= 7 && o.indexOf(h.num) + 1 <= 9).sort((a, b) => (b.s3 - a.s3) || a.num - b.num).slice(0, 3)
-    .map(h => ({ num: h.num, name: h.name, s3: h.s3, pop: pop.indexOf(h.num) + 1, rank: o.indexOf(h.num) + 1, best: ["前残り", "平均", "差し"][h.ws.indexOf(Math.max(...h.ws))] }));
+  const hs = race.horses.filter(h => !h.cancel); const mr = morningRank(race);
+  const o = hs.filter(h => h.sw != null).sort((a, b) => (b.sw - a.sw) || a.num - b.num).map(h => h.num);
+  const best = h => h.ws ? ["前残り", "平均", "差し"][h.ws.indexOf(Math.max(...h.ws))] : null;
+  const item = (h, mode) => ({ num: h.num, name: h.name, s3: h.s3, pop: pop.indexOf(h.num) + 1, mpop: mr(h.num), om: h.om, cur: race.result ? race.result.odds[h.num] : h.odds, mv: oddsMove(race, h), rank: o.indexOf(h.num) + 1, best: best(h), mode });
+  if (hs.some(h => oddsMove(race, h) != null))
+    return hs.filter(h => mr(h.num) >= 7 && oddsMove(race, h) != null && oddsMove(race, h) <= 1.1).sort((a, b) => (oddsMove(race, a) - oddsMove(race, b)) || a.num - b.num).slice(0, 5).map(h => item(h, "move"));
+  return hs.filter(h => h.s3 != null && pop.indexOf(h.num) + 1 >= 7 && o.indexOf(h.num) + 1 <= 9).sort((a, b) => (b.s3 - a.s3) || a.num - b.num).slice(0, 3).map(h => item(h, "tenkai"));
 }
 function myBets(race) { return S.bets.filter(b => b.ds === S.data.ds && b.race === `${race.place}${race.r}R`); }
 
@@ -581,7 +591,7 @@ function renderRace(v, race) {
   const sortKey = { num: h => h.num, yoso: h => yr(h.num) || big, model: h => mr(h.num) || big, tenkai: h => tr(h.num) || big, pop: h => pop.indexOf(h.num) + 1 || big }[hsort];
   const hs = race.horses.filter(h => !h.cancel).sort((a, c) => (sortKey(a) - sortKey(c)) || a.num - c.num);
   const pc1 = p => p >= 0.095 ? Math.round(p * 100) + "%" : (p * 100).toFixed(1) + "%";
-  const ks = keshiNums(race, pop); const an = anaList(race, pop);
+  const ks = keshiNums(race, pop); const an = anaList(race, pop); const mrk = morningRank(race);
   const b = S.b; const combos = combosOf(b); const unit = Math.max(100, Math.round((+b.unit || 100) / 100) * 100);
   const need = needOf(b.kind); const ordered = b.kind === "3連単" || b.kind === "馬単";
   const colIds = b.way === "box" ? ["box"] : [0, 1, 2].slice(0, need);
@@ -601,7 +611,7 @@ function renderRace(v, race) {
     const mi = mk.indexOf(h.num); const rk = res ? res.rank[h.num] : null; const od = res ? res.odds[h.num] : h.odds; const pp = pop.indexOf(h.num) + 1;
     return `<div class="hr${rk && rk <= 3 ? " in" : ""}">${chipNum(h.num, race.heads)}
       <div class="hn"><span class="h1">${mi >= 0 && mi < 6 ? `<b class="mk">${MK[mi]}</b>` : mi >= 0 && hasP ? `<b class="mk rk">${mi + 1}</b>` : ""}${esc(h.name)}${ks.includes(h.num) ? `<b class="leak"> 消</b>` : ""}${an.some(x => x.num === h.num) ? `<b class="ana"> 穴</b>` : ""}</span>
-        <small>${hsort === "tenkai" && h.sw != null ? `<b class="wp">展開${tr(h.num)}位 ${pc1(h.sw)}</b> <span>前${Math.round(h.ws[0] * 100)}・平${Math.round(h.ws[1] * 100)}・差${Math.round(h.ws[2] * 100)}</span> ` : hsort === "model" && h.pm != null ? `<b class="wp">モデル${mr(h.num)}位 ${pc1(h.pm)}</b> ` : h.pb != null ? `<b class="wp">勝率 ${pc1(h.pb)}</b> ` : ""}<span>${pp ? pp + "番人気 " : ""}${od ?? "-"}倍</span> <span>${esc(h.jockey)}</span>${hsort !== "tenkai" && h.sw != null ? ` <span>展開${tr(h.num)}位</span>` : ""}${rk ? `・<b class="${rk <= 3 ? "res1" : ""}">${rk}着</b>` : ""}</small></div>
+        <small>${hsort === "tenkai" && h.sw != null ? `<b class="wp">展開${tr(h.num)}位 ${pc1(h.sw)}</b> <span>前${Math.round(h.ws[0] * 100)}・平${Math.round(h.ws[1] * 100)}・差${Math.round(h.ws[2] * 100)}</span> ` : hsort === "model" && h.pm != null ? `<b class="wp">モデル${mr(h.num)}位 ${pc1(h.pm)}</b> ` : h.pb != null ? `<b class="wp">勝率 ${pc1(h.pb)}</b> ` : ""}<span>${pp ? pp + "番人気 " : ""}${od ?? "-"}倍</span> <span>${esc(h.jockey)}</span>${hsort !== "tenkai" && h.sw != null ? ` <span>展開${tr(h.num)}位</span>` : ""}${(() => { const m = oddsMove(race, h); return m != null && mrk(h.num) >= 7 && (m <= 0.9 || m > 1.1) ? ` <span class="${m <= 0.9 ? "ana" : "leak"}">朝${h.om}倍→${m <= 0.9 ? "売れた" : "売れていない"}</span>` : ""; })()}${rk ? `・<b class="${rk <= 3 ? "res1" : ""}">${rk}着</b>` : ""}</small></div>
       <div class="pks">${colIds.map(id => `<button class="pk" data-col="${id}" data-n="${h.num}" aria-pressed="${selOf(id).includes(h.num)}" aria-label="${h.num}番 ${esc(h.name)} ${colLab(id)}">${colIds.length === 1 ? "✓" : id + 1}</button>`).join("")}</div></div>`;
   }).join("");
   const mb = myBets(race);
@@ -614,7 +624,9 @@ function renderRace(v, race) {
     ${res ? `<p class="note"><b class="res1">結果 ${res.top3.join("-")}</b>（${res.top3.map(n => res.ninki[n]).join("-")}人気）三連複 ${yen(res.fuku3[0][1])}・馬場 ${esc(res.going)}</p>` : ""}
     ${ks.length ? `<p class="note"><b class="leak">消し ${ks.join("・")}</b>（7番人気以下で悪い印が重なった馬）</p>` : ""}
     ${race.flow ? `<p class="note">展開の見込み（オッズ無し）: 前残り ${Math.round(race.flow[0] * 100)}%／平均 ${Math.round(race.flow[1] * 100)}%／差し ${Math.round(race.flow[2] * 100)}%。逃げそうな馬 ${race.horses.filter(h => !h.cancel && h.ld != null).sort((a, c) => c.ld - a.ld).slice(0, 2).map(h => `${h.num}（${Math.round(h.ld * 100)}%）`).join("・")}</p>` : ""}
-    ${an.length ? `<p class="note"><b class="ana">穴候補</b>（7番人気以下・展開の3着内率順）<br>${an.map(x => `<b class="ana">${x.num} ${esc(x.name)}</b> ${x.pop}番人気・3着内 ${Math.round(x.s3 * 100)}%・${x.best}向き`).join("<br>")}</p>` : race.flow ? `<p class="note">穴候補はありません（7番人気以下で展開9位以内の馬がいない）。</p>` : ""}
+    ${an.length ? `<p class="note"><b class="ana">穴候補</b>（${an[0].mode === "move" ? "朝7番人気以下で、朝から売れた・ほぼ同じ馬。売れた順" : "朝の時点。7番人気以下・展開の3着内率順"}）<br>${an.map(x => x.mode === "move"
+        ? `<b class="ana">${x.num} ${esc(x.name)}</b> 朝${x.mpop}番人気 ${x.om}倍 → ${x.cur}倍（${x.mv <= 0.9 ? "売れた" : "ほぼ同じ"}）${x.rank ? `・展開${x.rank}位` : ""}`
+        : `<b class="ana">${x.num} ${esc(x.name)}</b> ${x.pop}番人気・3着内 ${Math.round(x.s3 * 100)}%・${x.best}向き`).join("<br>")}</p>` : (race.now || race.result) ? `<p class="note">穴候補はありません（朝7番人気以下で売れている馬がいない）。</p>` : race.flow ? `<p class="note">穴候補はありません（7番人気以下で展開9位以内の馬がいない）。</p>` : ""}
   </div>
   <div class="panel builder">
     <h2>買い目をつくる</h2>
@@ -643,7 +655,7 @@ function renderRace(v, race) {
     <div class="more">
     <p class="note">${judgeTag(race)}${kk ? `　作業1の買い方: ${esc(shapeText(kk))}（${combosOf(kk).length}点）` : ""}</p>${areText(race) ? `<p class="note">${areText(race)}</p>` : ""}
     <div class="tw"><table><thead><tr><th>番</th><th>馬名</th><th class="r">${race.now ? "今のオッズ" : "朝オッズ"}</th><th class="r">人気</th><th>印</th><th class="r">勝率</th><th class="r">モデル</th>${race.p_misho ? `<th class="r">未勝利</th>` : ""}${res ? `<th class="r">着</th><th class="r">確定</th>` : ""}</tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="note">並びは馬番順。人気は${res ? "確定オッズ" : race.now ? esc(race.odds_time.slice(11, 16)) + " のオッズ" : "朝のオッズ"}の順。${race.now && !res && race.mark_fixed ? "固定時の印6頭 " + race.mark_fixed.join("・") + (race.judge_fixed ? "・固定時の判定 " + race.judge_fixed.label : "") + "。" : ""}勝率＝合成（モデル×オッズ）で出した1着になる確率で、印と予想順はその順。モデル＝オッズを見ない順位と勝率。${hasT ? "展開順＝レースの流れ（前残り・平均・差し）を何千回も試した勝率の順（オッズ無し）。前・平・差はその流れになった時の勝率。<b class=\"ana\">穴</b>＝7番人気以下の馬を展開の3着内率の順に3頭まで（展開10位以下は入れない。過去の確かめで7番人気以下の3着内率は 展開1〜3位 16.5%・4〜9位 12〜13%・10位以下 5.6%）。" : ""}予想順は人気に近く、モデル順は過去の確かめで人気順より当たっていません。${ks.length ? `<b class="leak">消</b>＝7番人気以下で悪い印が重なった馬（過去の確かめで3着内 2.9%・複勝回収 43%。7番人気以下の全体は 8.7%・69%）。人気が変わると付き方も変わります。` : ""}</p>
+    <p class="note">並びは馬番順。人気は${res ? "確定オッズ" : race.now ? esc(race.odds_time.slice(11, 16)) + " のオッズ" : "朝のオッズ"}の順。${race.now && !res && race.mark_fixed ? "固定時の印6頭 " + race.mark_fixed.join("・") + (race.judge_fixed ? "・固定時の判定 " + race.judge_fixed.label : "") + "。" : ""}勝率＝合成（モデル×オッズ）で出した1着になる確率で、印と予想順はその順。モデル＝オッズを見ない順位と勝率。${hasT ? "展開順＝レースの流れ（前残り・平均・差し）を何千回も試した勝率の順（オッズ無し）。前・平・差はその流れになった時の勝率。<b class=\"ana\">穴</b>＝オッズが動いた後は、朝7番人気以下で朝から売れた・ほぼ同じ馬（今のオッズが朝の1.1倍以下）。過去4日の確かめで、売れた馬は3着内 20〜26%・複勝回収 77〜93%、売れていない馬は 4〜5%・31〜43%（件数が少なく、まだ傾向の段階）。朝のうちは展開の3着内率の順に3頭まで。" : ""}予想順は人気に近く、モデル順は過去の確かめで人気順より当たっていません。${ks.length ? `<b class="leak">消</b>＝7番人気以下で悪い印が重なった馬（過去の確かめで3着内 2.9%・複勝回収 43%。7番人気以下の全体は 8.7%・69%）。人気が変わると付き方も変わります。` : ""}</p>
     </div></details>
   </div>`;
   $("back").onclick = () => { history.back(); };
