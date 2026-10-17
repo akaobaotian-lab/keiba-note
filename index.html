@@ -125,6 +125,9 @@ button { min-height: 40px; }
 .mk.rk { display: inline-grid; place-items: center; min-width: 1.25em; height: 1.25em; border-radius: 99px; background: var(--soft); color: var(--muted); font-size: .72rem; vertical-align: 1px; }
 .wp { color: var(--fg); margin-right: 4px; }
 .ana { color: var(--accent); }
+.why { display: block; font-size: .8rem; line-height: 1.5; }
+.why b { display: inline-block; width: 1.3em; }
+details.note p { margin: .5rem 0; }
 .hn small span, .hn small b { white-space: nowrap; display: inline-block; margin-right: 4px; }
 .builder .seg { align-items: center; }
 td small { color: var(--muted); margin-left: 3px; }
@@ -505,7 +508,27 @@ function morningRank(race) { const o = race.horses.filter(h => !h.cancel && h.om
 // 穴候補。オッズが動いた後: 朝7番人気以下で、朝から売れた・ほぼ同じ馬（今のオッズが朝の1.1倍以下）を売れた順に5頭まで。
 //   過去4日・朝7番人気以下の確かめ: 売れた 122頭は3着内 20〜26%・複勝 77〜93%、売れていない 588頭は 4〜5%・31〜43%（件数が少なく未確定）
 // 朝のオッズしか無い間: 7番人気以下を展開シミュレーションの3着内率の順に3頭まで（展開10位以下は入れない）
+// 穴候補（2026-10-17 から。本人: 穴を人気・オッズで選ばない、理由を出す、レース内容を見る）。tenkai.py が人気なしの評価（p3a・ana）と理由（why）を出す
+//   オッズが固まる前: 人気を使わずに「見直せる馬」＝データの評価4〜9位で、前走の内容が着順より良い（良い見方1つ以上・悪い見方なし）馬を3頭まで
+//     確認期間（1勝以上・10頭以上）: 3着内 22.4%・複勝 80%、結果的に7番人気以下だったのは47%
+//   発走前のオッズ（15分前の出し直し）か結果がある時: 今の7番人気以下を、評価＋内容の加点（ana）の順に3頭。人気は「穴かどうか」の線引きにだけ使う
+//     確認期間: 3着内 12.9%・来た穴の55%・複勝 74%（人気順 7・8・9番人気は 14.9%・64%・77%）
 function anaList(race, pop) {
+  pop = pop || popOrder(race);
+  const hs = race.horses.filter(h => !h.cancel);
+  if (!hs.some(h => h.ana != null)) return oldAnaList(race, pop);
+  const r3 = hs.filter(h => h.p3a != null).sort((a, b) => (b.p3a - a.p3a) || a.num - b.num).map(h => h.num);
+  const item = (h, mode) => ({ num: h.num, name: h.name, why: h.why || {}, pop: pop.indexOf(h.num) + 1, p3a: h.p3a, rank: r3.indexOf(h.num) + 1, mode });
+  if (race.now || race.result)
+    return hs.filter(h => h.ana != null && pop.indexOf(h.num) + 1 >= 7).sort((a, b) => (b.ana - a.ana) || a.num - b.num).slice(0, 3).map(h => item(h, "now"));
+  return hs.filter(h => { const k = r3.indexOf(h.num) + 1; return k >= 4 && k <= 9 && h.ng >= 1 && h.nb === 0; })
+    .sort((a, b) => (b.p3a - a.p3a) || a.num - b.num).slice(0, 3).map(h => item(h, "data"));
+}
+function whyHtml(w) {
+  return [["◯", w.kachi, "勝てる理由"], ["△", w.maybe, "入るかもしれない理由"], ["×", w.dame, "勝てない理由"]]
+    .filter(x => x[1] && x[1].length).map(([m, a, t]) => `<span class="why"><b>${m}</b>${esc(a.join("／"))}</span>`).join("");
+}
+function oldAnaList(race, pop) {
   pop = pop || popOrder(race);
   const hs = race.horses.filter(h => !h.cancel); const mr = morningRank(race);
   const o = hs.filter(h => h.sw != null).sort((a, b) => (b.sw - a.sw) || a.num - b.num).map(h => h.num);
@@ -624,9 +647,14 @@ function renderRace(v, race) {
     ${res ? `<p class="note"><b class="res1">結果 ${res.top3.join("-")}</b>（${res.top3.map(n => res.ninki[n]).join("-")}人気）三連複 ${yen(res.fuku3[0][1])}・馬場 ${esc(res.going)}</p>` : ""}
     ${ks.length ? `<p class="note"><b class="leak">消し ${ks.join("・")}</b>（7番人気以下で悪い印が重なった馬）</p>` : ""}
     ${race.flow ? `<p class="note">展開の見込み（オッズ無し）: 前残り ${Math.round(race.flow[0] * 100)}%／平均 ${Math.round(race.flow[1] * 100)}%／差し ${Math.round(race.flow[2] * 100)}%。逃げそうな馬 ${race.horses.filter(h => !h.cancel && h.ld != null).sort((a, c) => c.ld - a.ld).slice(0, 2).map(h => `${h.num}（${Math.round(h.ld * 100)}%）`).join("・")}</p>` : ""}
-    ${an.length ? `<p class="note"><b class="ana">穴候補</b>（${an[0].mode === "move" ? "朝7番人気以下で、朝から売れた・ほぼ同じ馬。売れた順" : "朝の時点。7番人気以下・展開の3着内率順"}）<br>${an.map(x => x.mode === "move"
+    ${an.length && (an[0].mode === "now" || an[0].mode === "data") ? `<div class="note"><b class="ana">穴候補</b>（${an[0].mode === "now" ? "今の7番人気以下を、データの評価（人気・オッズなし）＋前走の内容の順に" : "人気・オッズを使わずに選んだ見直せる馬。データの評価4〜9位で、前走の内容が着順より良い馬"}）${an.map(x =>
+        `<p><b class="ana">${x.num} ${esc(x.name)}</b> ${x.pop ? x.pop + "番人気・" : ""}データ${x.rank}位（3着内 ${Math.round(x.p3a * 100)}%）<br>${whyHtml(x.why)}</p>`).join("")}</div>`
+      : !an.length && race.horses.some(h => h.ana != null) ? `<p class="note">穴候補はありません（${race.now || race.result ? "7番人気以下に評価の付いた馬がいない" : "評価4〜9位で前走の内容が良い馬がいない"}）。</p>`
+      : an.length ? `<p class="note"><b class="ana">穴候補</b>（${an[0].mode === "move" ? "朝7番人気以下で、朝から売れた・ほぼ同じ馬。売れた順" : "朝の時点。7番人気以下・展開の3着内率順"}）<br>${an.map(x => x.mode === "move"
         ? `<b class="ana">${x.num} ${esc(x.name)}</b> 朝${x.mpop}番人気 ${x.om}倍 → ${x.cur}倍（${x.mv <= 0.9 ? "売れた" : "ほぼ同じ"}）${x.rank ? `・展開${x.rank}位` : ""}`
         : `<b class="ana">${x.num} ${esc(x.name)}</b> ${x.pop}番人気・3着内 ${Math.round(x.s3 * 100)}%・${x.best}向き`).join("<br>")}</p>` : (race.now || race.result) ? `<p class="note">穴候補はありません（朝7番人気以下で売れている馬がいない）。</p>` : race.flow ? `<p class="note">穴候補はありません（7番人気以下で展開9位以内の馬がいない）。</p>` : ""}
+    ${race.horses.some(h => h.why) ? `<details class="note"><summary>全頭の評価と理由（人気・オッズなし）</summary>${race.horses.filter(h => !h.cancel && h.p3a != null).sort((a, c) => (c.p3a - a.p3a) || a.num - c.num).map((h, i) =>
+        `<p><b>${i + 1}位 ${h.num} ${esc(h.name)}</b> 3着内 ${Math.round(h.p3a * 100)}%<br>${whyHtml(h.why || {}) || "<span class=\"why\">目立つ理由なし</span>"}</p>`).join("")}</details>` : ""}
   </div>
   <div class="panel builder">
     <h2>買い目をつくる</h2>
