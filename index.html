@@ -553,8 +553,28 @@ function anaList(race, pop) {
 }
 // 要素ごとの印。強さ＝モデル（オッズ無し）、脚質＝展開ごとの勝率（ws: 前残り・平均・差し）で前向きか差し向きか、理由＝良い印の数−悪い印の数、
 // 総合＝人気なしの評価（3着内率）、当日＝合成の勝率（モデル×オッズ・馬体重込み）。枠・血統・騎手・距離はまだデータに無い
+// 要素ごとの印（keiba-data の inshi.py。h.f＝要素ごとのメンバー内順位と理由の数、h.ft＝当日の順位、h.tag＝危/狙）。本人 2026-10-24
+// 強さ・枠・脚質・距離・騎手・総合はオッズを見ない。当日と目印（危・狙）は発走前のオッズで出し直した時だけ
+function inshiPanel(race, pop) {
+  const hs = race.horses.filter(h => !h.cancel && h.f);
+  const K = ["強さ", "枠", "脚質", "距離", "騎手", "総合"]; const hasT = race.now && hs.some(h => h.ft);
+  const mark = k => !k ? "" : k <= 5 ? MK[k - 1] : k;
+  const cell = k => `<td class="c${k && k <= 3 ? " res1" : ""}">${mark(k)}</td>`;
+  const odr = race.result ? n => race.result.ninki[n] : n => pop.indexOf(n) + 1;
+  const tagb = h => h.tag === "危" ? ` <b class="leak">危</b>` : h.tag === "狙" ? ` <b class="ana">狙</b>` : "";
+  const rows = hs.slice().sort((a, c) => (a.f.総合 - c.f.総合) || a.num - c.num).map(h => { const rk = race.result ? race.result.rank[h.num] : null;
+    return `<tr><td class="nmc">${chipNum(h.num, race.heads)} ${esc(h.name)}${tagb(h)}<small>${esc(h.jockey)}・理由${h.f.why}</small></td>${K.map(k => cell(h.f[k])).join("")}${hasT ? cell(h.ft) : ""}<td class="r">${odr(h.num) || "-"}</td>${race.result ? `<td class="r ${rk && rk <= 3 ? "res1" : ""}">${rk ?? "除"}</td>` : ""}</tr>`; }).join("");
+  const dz = hs.filter(h => h.tag === "危"), nr = hs.filter(h => h.tag === "狙");
+  return `<div class="panel"><details class="cl" open style="min-width:0"><summary>要素ごとの印</summary>
+    ${hasT ? `<p class="note">${dz.length ? `<b class="leak">危ない人気馬 ${dz.map(h => h.num).join("・")}</b>（1〜3番人気なのに理由が0〜1個）　` : ""}${nr.length ? `<b class="ana">狙い ${nr.map(h => h.num).join("・")}</b>（4番人気以下なのに総合3位以内）` : ""}${!dz.length && !nr.length ? "危ない人気馬・狙いはいません。" : ""}</p>` : `<p class="note">当日の印・危ない人気馬・狙いは、発走前のオッズで出し直した時に出ます。</p>`}
+    <div class="tw"><table class="fac"><thead><tr><th>馬</th>${K.map(k => `<th class="c">${k.slice(0, 1)}</th>`).join("")}${hasT ? `<th class="c">当</th>` : ""}<th class="r">人</th>${race.result ? `<th class="r">着</th>` : ""}</tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="note">並びは総合の順。印はメンバーの中での順位（◎○▲△△、6位から下は数字）。強＝強さ（過去のレースの内容）、枠＝枠・馬番、脚＝脚質（位置取りとコースの相性）、距＝距離・コースの得意、騎＝騎手、総＝全部を踏まえた印（ここまでオッズ・人気は見ない）${hasT ? "、当＝当日（総合＋今のオッズ＋馬体重）" : ""}、人＝人気。理由＝強さ・枠・脚質・距離・騎手のうちメンバー内3位以内の数。
+    過去の確かめ（2025-07〜2026-10、1勝クラス以上・10頭以上）: 1〜3番人気で理由0〜1個の馬は3着内 40%（理由4個なら 59%）。4〜9番人気で総合3位以内の馬は、同じ人気の平均より3着内が多い（7〜9番人気で 23%、平均 15%）。どちらも複勝の回収は100%に届きません。血統の印はまだありません。</p>
+  </details></div>`;
+}
 function factorPanel(race, pop) {
   const hs = race.horses.filter(h => !h.cancel);
+  if (hs.some(h => h.f)) return inshiPanel(race, pop);
   if (!hs.some(h => h.pm != null || h.sw != null)) return "";
   const rankBy = f => { const o = hs.filter(h => f(h) != null).sort((a, c) => (f(c) - f(a)) || ((c.p3a ?? 0) - (a.p3a ?? 0)) || a.num - c.num).map(h => h.num); return n => o.indexOf(n) + 1; };
   const cols = [["強さ", rankBy(h => h.pm)], ["理由", rankBy(h => h.cnt)], ["総合", rankBy(h => h.p3a)], ["当日", rankBy(h => h.pb)]]
@@ -599,7 +619,7 @@ function clock() { const d = new Date(); const p = n => String(n).padStart(2, "0
 function untilText(m) { return m < 60 ? `あと${m}分` : `あと${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + "分" : ""}`; }
 // 荒れ度はオッズとのずれで決まるので、発走前のオッズで出し直したレース（今）か結果が出たレースだけ出す。前日・朝の判定は出さない
 function oddsReady(r) { return !!(r.now || r.result); }
-function pOf(r) { return oddsReady(r) ? r.p10k ?? r.p10k_final ?? null : null; }
+function pOf(r) { return oddsReady(r) ? r.are_p ?? r.p10k ?? r.p10k_final ?? null : null; }   // are_p＝総合の印とオッズのずれで出した荒れ度（inshi.py now）
 // 左の大きい数字: 三連複が1万円以上になる確率。その数字が無いレースは判定の言葉
 function pcBox(r) {
   const p = pOf(r);
@@ -649,6 +669,7 @@ function renderYoso() {
         ${r.mark ? `<span class="l2">${r.mark.slice(0, 6).map((n, i) => `<span class="mkn">${MK[i]}${chipNum(n, r.heads)}</span>`).join("")}</span>` : ""}
         ${anaList(r).length ? `<span class="sub"><b class="ana">穴候補 ${anaList(r).map(x => x.num).join("・")}</b></span>` : ""}
         ${keshiNums(r).length ? `<span class="sub">消し ${keshiNums(r).join("・")}</span>` : ""}
+        ${r.now && r.horses.some(h => h.tag) ? `<span class="sub">${["危", "狙"].map(t => { const n = r.horses.filter(h => h.tag === t && !h.cancel).map(h => h.num); return n.length ? `<b class="${t === "危" ? "leak" : "ana"}">${t === "危" ? "危ない人気馬" : "狙い"} ${n.join("・")}</b>` : ""; }).filter(Boolean).join("　")}</span>` : ""}
         ${res ? `<span class="sub">結果 ${res}</span>` : ""}
         ${mb.length ? `<span class="mine ${ret ? "hit" : ""}">記録 ${mb.length}件 ${yen(cost)}${ret !== null ? " → " + yen(ret) : ""}</span>` : ""}
         </span>
