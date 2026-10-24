@@ -225,9 +225,25 @@ async function ghWrite(path, data, sha, msg) {
   return gh(path, { method: "PUT", body: JSON.stringify({ message: msg, content: b64enc(JSON.stringify(data, null, 1)), ...(sha ? { sha } : {}) }) });
 }
 async function getDay(ds) {
-  if (!S.cache[ds]) { try { S.cache[ds] = (await ghRead(`days/${ds}.json`))?.data ?? null; } catch { return null; } }   // 読めなかった時は覚えず、次にまた取りに行く
+  if (!S.cache[ds]) {
+    try { S.cache[ds] = (await ghRead(`days/${ds}.json`))?.data ?? null; } catch { return null; }   // 読めなかった時は覚えず、次にまた取りに行く
+    await addResults(S.cache[ds]);
+  }
   return S.cache[ds];
 }
+// GitHub Actions（keiba-data の src/cloud_kekka.py）が取った結果は results/<日付>.json に別に置かれる。PC の予想に結果が無いレースだけ埋める
+async function addResults(d) {
+  if (!d) return;
+  let x = null; try { x = (await ghRead(`results/${d.ds}.json`))?.data; } catch {}
+  if (!x) return;
+  for (const r of d.races) if (!r.result && x[r.rid]) r.result = x[r.rid];
+}
+// 「結果を取る」: requests/kekka.json を書くと keiba-data の GitHub Actions が動き、1〜2分で results/<日付>.json が増える
+async function askKekka(ds) {
+  const cur = await ghRead("requests/kekka.json").catch(() => null);
+  await ghWrite("requests/kekka.json", { day: ds.replaceAll("-", ""), at: new Date().toISOString() }, cur?.sha, `結果を取る ${ds}`);
+}
+async function reloadDay(ds) { delete S.cache[ds]; const d = await getDay(ds); if (d && S.day === ds) { S.data = d; render(); } }
 async function loadDays() {
   try { const x = await ghRead("days/index.json"); S.days = x?.data ?? []; if (!x) alertMsg("予想が見つかりません。設定・QR で持ち主・リポジトリ名を確かめてください。"); }
   catch (e) { S.days = []; alertMsg("予想を読めませんでした（" + (e.code || e.message) + "）。設定・QR で鍵を確かめてください。"); }
@@ -611,6 +627,7 @@ function renderYoso() {
       ${hasP ? `<div class="row"><span class="lab">狙い目（三連複1万円以上が 60%以上・これから走るレース）</span>
         ${picks.length ? `<div class="quick">${picks.map(r => `<button class="pickb" data-rid="${r.rid}"><b>${Math.round(pOf(r) * 100)}%</b> ${esc(r.place)}${r.r}R <small>${r.post}</small></button>`).join("")}</div>` : `<span class="note">いまは 60%以上のレースがありません。</span>`}</div>
       <div class="seg" role="group" aria-label="並び"><button data-sort="time" aria-pressed="${sort === "time"}">発走順</button><button data-sort="p" aria-pressed="${sort === "p"}">荒れそうな順</button></div>` : ""}
+      <div class="row"><button id="kekkabtn" ${S.dbOk ? "" : "disabled"}>結果を取る</button><span class="note" id="kekkamsg">${S.kekkaMsg || "終わったレースの結果を取りに行きます（1〜3分）"}</span></div>
       ${dayBets.length ? `<p class="mine ${dayRet ? "hit" : ""}">この日の記録 ${dayBets.length}件 ${yen(dayCost)}${settled.length ? `　結果が出た分 ${yen(settledCost)} → ${yen(dayRet)}` : ""}</p>` : ""}
       <details class="cl"><summary>数字の読み方</summary><p class="note">${esc(S.data.ds)}　${rs.length}R。${hasP ? "<b>左の大きい数字は、三連複が1万円以上になる確率（1勝クラス以上の平均 36%、過去では 60〜70% と出たレースの61%、70%以上の83%が実際に1万円以上）。</b>" : "荒れ度は、印とオッズのずれで決まるので、発走前のオッズで出し直したレース（「今」の付いたレース）にだけ出します。それまでは「待ち」です。"}作業1の買い目の人気順は朝のオッズなので、買う時の人気が変わっていたら合わせてください。${S.data.now_time ? `<b>「今」の付いたレースは ${esc(S.data.now_time.slice(11, 16))} 頃のオッズで印・荒れ方・作業1を出し直しています（荒れ方もオッズで判定）。</b>` : ""}${S.data.fixed ? "予想の固定 " + esc(S.data.fixed) : ""}</p></details>
     </div>
@@ -633,6 +650,19 @@ function renderYoso() {
   </div>`;
   v.querySelectorAll("[data-rid]").forEach(el => el.addEventListener("click", () => { history.pushState({ r: 1 }, ""); S.open = el.dataset.rid; S.b = { kind: "3連複", way: "form", cols: [[], [], []], box: [], unit: S.b.unit || 100 }; render(); window.scrollTo(0, 0); }));
   v.querySelectorAll("[data-sort]").forEach(el => el.onclick = () => { try { localStorage.setItem("keiba.sort", el.dataset.sort); } catch {} render(); });
+  const kb = $("kekkabtn"); if (kb) kb.onclick = async () => {
+    const ds = S.data.ds; kb.disabled = true;
+    try { await askKekka(ds); } catch (e) { S.kekkaMsg = "頼めませんでした（" + (e.code || e.message) + "）"; render(); return; }
+    const before = S.data.races.filter(r => r.result).length;
+    S.kekkaMsg = "GitHub で結果を取っています…"; render();
+    for (const sec of [60, 40, 40, 40, 60]) {   // 合わせて4分まで、増えたら止める
+      await new Promise(f => setTimeout(f, sec * 1000));
+      await reloadDay(ds);
+      const n = (S.cache[ds]?.races || []).filter(r => r.result).length;
+      if (n > before) { S.kekkaMsg = `結果を${n - before}R 足しました`; render(); return; }
+    }
+    S.kekkaMsg = "新しい結果はありませんでした（まだ確定していないか、取り済み）"; render();
+  };
 }
 // 一覧の「次 あと○分」と発走済みの薄い表示を進める
 setInterval(() => { if (S.tab === "yoso" && !S.open && S.data && S.data.ds === clock().ds) renderYoso(); }, 60000);
