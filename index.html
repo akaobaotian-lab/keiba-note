@@ -557,7 +557,7 @@ function anaList(race, pop) {
 // 強さ・枠・脚質・距離・騎手・総合はオッズを見ない。当日と目印（危・狙）は発走前のオッズで出し直した時だけ
 function inshiPanel(race, pop) {
   const hs = race.horses.filter(h => !h.cancel && h.f);
-  const K = ["強さ", "枠", "脚質", "距離", "騎手", "総合"]; const hasT = race.now && hs.some(h => h.ft);
+  const K = ["強さ", "枠", "脚質", "距離", "騎手", "血統", "総合"].filter(k => hs.some(h => h.f[k] != null)); const hasT = race.now && hs.some(h => h.ft);
   const mark = k => !k ? "" : k <= 5 ? MK[k - 1] : k;
   const cell = k => `<td class="c${k && k <= 3 ? " res1" : ""}">${mark(k)}</td>`;
   const odr = race.result ? n => race.result.ninki[n] : n => pop.indexOf(n) + 1;
@@ -566,10 +566,10 @@ function inshiPanel(race, pop) {
     return `<tr><td class="nmc">${chipNum(h.num, race.heads)} ${esc(h.name)}${tagb(h)}<small>${esc(h.jockey)}・理由${h.f.why}</small></td>${K.map(k => cell(h.f[k])).join("")}${hasT ? cell(h.ft) : ""}<td class="r">${odr(h.num) || "-"}</td>${race.result ? `<td class="r ${rk && rk <= 3 ? "res1" : ""}">${rk ?? "除"}</td>` : ""}</tr>`; }).join("");
   const dz = hs.filter(h => h.tag === "危"), nr = hs.filter(h => h.tag === "狙");
   return `<div class="panel"><details class="cl" open style="min-width:0"><summary>要素ごとの印</summary>
-    ${hasT ? `<p class="note">${dz.length ? `<b class="leak">危ない人気馬 ${dz.map(h => h.num).join("・")}</b>（1〜3番人気なのに理由が0〜1個）　` : ""}${nr.length ? `<b class="ana">狙い ${nr.map(h => h.num).join("・")}</b>（4番人気以下なのに総合3位以内）` : ""}${!dz.length && !nr.length ? "危ない人気馬・狙いはいません。" : ""}</p>` : `<p class="note">当日の印・危ない人気馬・狙いは、発走前のオッズで出し直した時に出ます。</p>`}
+    ${hasT ? `<p class="note">${dz.length ? `<b class="leak">危ない人気馬 ${dz.map(h => h.num).join("・")}</b>（1〜3番人気なのに理由が0〜1個か総合6位以下）　` : ""}${nr.length ? `<b class="ana">狙い ${nr.map(h => h.num).join("・")}</b>（4〜6番人気で総合3位以内、または7番人気以下で理由3個以上）` : ""}${!dz.length && !nr.length ? "危ない人気馬・狙いはいません。" : ""}</p>` : `<p class="note">当日の印・危ない人気馬・狙いは、発走前のオッズで出し直した時に出ます。</p>`}
     <div class="tw"><table class="fac"><thead><tr><th>馬</th>${K.map(k => `<th class="c">${k.slice(0, 1)}</th>`).join("")}${hasT ? `<th class="c">当</th>` : ""}<th class="r">人</th>${race.result ? `<th class="r">着</th>` : ""}</tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="note">並びは総合の順。印はメンバーの中での順位（◎○▲△△、6位から下は数字）。強＝強さ（過去のレースの内容）、枠＝枠・馬番、脚＝脚質（位置取りとコースの相性）、距＝距離・コースの得意、騎＝騎手、総＝全部を踏まえた印（ここまでオッズ・人気は見ない）${hasT ? "、当＝当日（総合＋今のオッズ＋馬体重）" : ""}、人＝人気。理由＝強さ・枠・脚質・距離・騎手のうちメンバー内3位以内の数。
-    過去の確かめ（2025-07〜2026-10、1勝クラス以上・10頭以上）: 1〜3番人気で理由0〜1個の馬は3着内 40%（理由4個なら 59%）。4〜9番人気で総合3位以内の馬は、同じ人気の平均より3着内が多い（7〜9番人気で 23%、平均 15%）。どちらも複勝の回収は100%に届きません。血統の印はまだありません。</p>
+    <p class="note">並びは総合の順。印はメンバーの中での順位（◎○▲△△、6位から下は数字）。強＝強さ（過去のレースの内容）、枠＝枠・馬番、脚＝脚質（位置取りとコースの相性）、距＝距離・コースの得意、騎＝騎手、血＝血統（父・母父の芝ダ・距離・コースの向き）、総＝全部を踏まえた印（ここまでオッズ・人気は見ない）${hasT ? "、当＝当日（総合＋今のオッズ＋馬体重）" : ""}、人＝人気。理由＝強さ・枠・脚質・距離・騎手・血統のうちメンバー内3位以内の数。
+    過去の確かめ（2025-07〜2026-10、1勝クラス以上・10頭以上）: 危ない人気馬の3着内は 40%（ほかの1〜3番人気は 52%）。狙いは 4〜6番人気で 32%（ほかは 26%）、7番人気以下で 15%（ほかは 8%）。どれも複勝の回収は100%に届きません。</p>
   </details></div>`;
 }
 function factorPanel(race, pop) {
