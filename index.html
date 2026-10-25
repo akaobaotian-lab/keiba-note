@@ -58,6 +58,7 @@ button:disabled { opacity: .5; cursor: default; }
 .num { display: inline-grid; place-items: center; min-width: 1.6em; height: 1.6em; border-radius: 4px; font-weight: 700; font-size: .8rem; font-variant-numeric: tabular-nums; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
 .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; min-width: 0; }
 .tw { overflow-x: auto; }
+.reco { border-color: var(--accent); } .reco h2 small { font-weight: 400; margin-left: .4rem; }
 table.fac td, table.fac th { padding-left: 3px; padding-right: 3px; }
 table.fac td.c, table.fac th.c { text-align: center; }
 table.fac { font-size: .76rem; }
@@ -262,7 +263,7 @@ async function loadDays() {
 async function loadDay(ds) {
   if (!ds) { S.data = null; render(); return; }
   S.data = await getDay(ds); S.open = null; render();
-  autoRefresh();
+  autoRefresh(); autoKekka();
 }
 $("day").addEventListener("change", e => { S.day = e.target.value; try { localStorage.setItem("keiba.day", S.day); } catch {} loadDay(S.day); });
 
@@ -459,6 +460,50 @@ function quickFill(race, what) {
   if (what === "keshi") { const ks = keshiNums(race, pop); b.box = b.box.filter(n => !ks.includes(n)); b.cols = b.cols.map(c => c.filter(n => !ks.includes(n))); return; }
   if (what === "mark3") { b.way = "form"; b.cols = [mk.slice(0, 3), mk.slice(0, 6), [...new Set([...mk.slice(0, 3), ...pop.slice(0, 10)])]]; }
   if (what === "clear") { b.cols = [[], [], []]; b.box = []; }
+}
+
+// ---- おすすめの買い目（本人 2026-10-25「レースを開いた一番上に、おすすめの買い目」） ----
+// 3連複。軸＝当日の印（今のオッズの前は総合）の一番上。ただし危ない人気馬・道悪で悪い目印（道×・道×後）の馬は軸にしない
+// 相手＝印の上位（荒れ度 60%以上で広く、30%未満で狭く）に、狙い・道◎を足す。道×・道×後は外す。荒れ度が低く12頭以下なら上位4頭のボックス
+function recoShape(race) {
+  const hs = race.horses.filter(h => !h.cancel && h.f);
+  if (hs.length < 5) return null;
+  const useT = !!race.now && hs.some(h => h.ft);
+  const rk = h => useT ? (h.ft || 99) : h.f.総合;
+  const ord = hs.slice().sort((a, b) => (rk(a) - rk(b)) || a.num - b.num);
+  const bad = h => h.doro === "後" || h.doro === "苦", plus = h => h.tag === "狙" || h.doro === "得";
+  const p = pOf(race); const pp = p ?? 0.36; const why = [];
+  const ok = ord.filter(h => !bad(h));
+  if (pp < 0.3 && hs.length <= 12) {
+    const box = ok.slice(0, 4).map(h => h.num);
+    why.push(`荒れ度が低い（${p == null ? "—" : Math.round(p * 100) + "%"}）ので${useT ? "当日" : "総合"}の印の上位4頭のボックス`);
+    return { b: { kind: "3連複", way: "box", box, cols: [[], [], []] }, why, useT };
+  }
+  const axis = ok.find(h => h.tag !== "危") || ok[0];
+  const n2 = pp >= 0.6 ? 5 : 4, n3 = pp >= 0.6 ? 9 : 7;
+  const rest = ok.filter(h => h !== axis);
+  const add = rest.filter(plus).map(h => h.num);
+  const c2 = [...new Set([...rest.slice(0, n2).map(h => h.num), ...add])];
+  const c3 = [...new Set([...c2, ...rest.slice(0, n3).map(h => h.num)])];
+  why.push(`軸 ${axis.num}（${useT ? "当日" : "総合"}の印 ${rk(axis)}位${axis.tag === "狙" ? "・狙い" : ""}${axis.doro === "得" ? "・道◎" : ""}）`);
+  const skip = ord.filter(h => rk(h) < rk(axis)); if (skip.length) why.push(`${skip.map(h => h.num).join("・")} は${skip.map(h => h.tag === "危" ? "危ない人気馬" : "道悪の目印").join("・")}なので軸にしない`);
+  if (add.length) why.push(`${add.join("・")} は狙い・道◎なので相手に足す`);
+  const ex = ord.filter(bad).map(h => h.num); if (ex.length) why.push(`${ex.join("・")} は道×・道×後なので外す`);
+  why.push(`荒れ度 ${p == null ? "—（オッズ待ち。平均として）" : Math.round(p * 100) + "%"} → 相手 ${n2}頭・3頭目まで ${n3}頭`);
+  return { b: { kind: "3連複", way: "form", cols: [[axis.num], c2, c3], box: [] }, why, useT };
+}
+function recoPanel(race) {
+  const r = recoShape(race);
+  if (!r) return "";
+  const n = combosOf(r.b).length; const res = race.result;
+  let hit = "";
+  if (res) { const t = [...res.top3].sort((a, b) => a - b).join("-"); const got = combosOf(r.b).some(c => c.join("-") === t);
+    hit = `<p class="note"><b class="${got ? "res1" : "leak"}">${got ? `的中 ${yen(res.fuku3[0][1])}（${n}点 ${yen(n * 100)}）` : `外れ（結果 ${res.top3.join("-")}）`}</b></p>`; }
+  const age = race.now && race.odds_time ? `${esc(race.odds_time.slice(11, 16))} のオッズ` : "オッズが出る前（総合の印）";
+  return `<div class="panel reco"><h2>おすすめの買い目 <small class="note">${age}</small></h2>
+    <div class="shape">${shapeHtml(r.b)}</div><p class="note"><b>${n}点 ${yen(n * 100)}</b>（1点100円）</p>${hit}
+    <div class="quick"><button id="recofill" class="primary">買い目に入れる</button><button id="recocopy">コピー</button>${!res ? `<button data-yoso="now">今のオッズで出し直す</button>` : ""}</div>
+    <details class="cl"><summary>この買い目の決め方</summary><p class="note">${r.why.map(esc).join("<br>")}</p></details></div>`;
 }
 
 // ---- 比べ（人気版・印版・モデル版・作業1） ----
@@ -720,8 +765,27 @@ async function autoRefresh() {
   if (cur?.data?.at && Date.now() - new Date(cur.data.at) < 15 * 60000) return;
   S.busy = true; try { await askYoso("now", S.data.ds, true); } finally { S.busy = false; }
 }
-document.addEventListener("visibilitychange", () => { if (!document.hidden) autoRefresh(); });
-setInterval(() => { if (!document.hidden) autoRefresh(); }, 5 * 60000);
+// 結果の自動反映（本人 2026-10-25）。発走から15分過ぎて結果の無いレースがあれば「結果を取る」を頼む（誰かが10分以内に頼んでいれば頼まない）
+async function autoKekka() {
+  const ck = clock(); if (!cfg()?.token || !S.data || S.busyK) return;
+  const today = S.data.ds === ck.ds; const past = S.data.ds < ck.ds;
+  const need = S.data.races.filter(r => !r.result && (past || (today && postMin(r) + 15 <= ck.hm)));
+  if (!need.length || (past && S.data.ds < new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10))) return;   // 3日より前の日は頼まない
+  const cur = await ghRead("requests/kekka.json").catch(() => null);
+  if (cur?.data?.at && Date.now() - new Date(cur.data.at) < 10 * 60000) { setTimeout(() => reloadDay(S.data.ds), 90000); return; }
+  S.busyK = true;
+  try {
+    await askKekka(S.data.ds); const ds = S.data.ds; const before = S.data.races.filter(r => r.result).length;
+    S.kekkaMsg = `終わったレース${need.length}Rの結果を自動で取っています…`; render();
+    for (const sec of [60, 45, 45, 60]) {
+      await new Promise(f => setTimeout(f, sec * 1000)); await reloadDay(ds);
+      const n = (S.cache[ds]?.races || []).filter(r => r.result).length;
+      if (n > before) { S.kekkaMsg = `結果を${n - before}R 反映しました`; render(); break; }
+    }
+  } finally { S.busyK = false; }
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { autoRefresh(); autoKekka(); } });
+setInterval(() => { if (!document.hidden) { autoRefresh(); autoKekka(); } }, 5 * 60000);
 // 予想の出し直しを頼んで、days/<日付>.json が変わるまで待つ（今＝5〜10分、朝＝20〜30分）
 async function askYoso(mode, ds, auto) {
   const name = (auto ? "自動の" : "") + (mode === "asa" ? "予想づくり" : "今のオッズでの出し直し");
@@ -786,6 +850,10 @@ function renderRace(v, race) {
       <p class="note">${race.surf}${race.dist}m・${race.heads}頭${pOf(race) != null ? "・左は三連複が1万円以上になる確率（平均 36%）" : ""}${race.now ? `・${esc(race.odds_time.slice(11, 16))} のオッズ` : ""}</p></div></div>
     ${res ? `<p class="note"><b class="res1">結果 ${res.top3.join("-")}</b>（${res.top3.map(n => res.ninki[n]).join("-")}人気）三連複 ${yen(res.fuku3[0][1])}・馬場 ${esc(res.going)}</p>` : ""}
     ${badBaba(race) ? `<p class="warn">${esc(badBaba(race))}</p>` : ""}
+    ${S.kekkaMsg ? `<p class="note">${esc(S.kekkaMsg)}</p>` : ""}
+  </div>
+  ${recoPanel(race)}
+  <div class="panel">
     ${ks.length ? `<p class="note"><b class="leak">消し ${ks.join("・")}</b>（7番人気以下で悪い印が重なった馬）</p>` : ""}
     ${race.flow ? `<p class="note">展開の見込み（オッズ無し）: 前残り ${Math.round(race.flow[0] * 100)}%／平均 ${Math.round(race.flow[1] * 100)}%／差し ${Math.round(race.flow[2] * 100)}%。逃げそうな馬 ${race.horses.filter(h => !h.cancel && h.ld != null).sort((a, c) => c.ld - a.ld).slice(0, 2).map(h => `${h.num}（${Math.round(h.ld * 100)}%）`).join("・")}</p>` : ""}
     ${an.length && (an[0].mode === "now" || an[0].mode === "data") ? `<div class="note"><b class="ana">穴候補</b>（${an[0].mode === "now" ? "今の7番人気以下を、データの評価（人気・オッズなし）＋前走の内容の順に" : "人気・オッズを使わずに選んだ見直せる馬。データの評価4〜9位で、前走の内容が着順より良い馬"}）${an.map(x =>
@@ -829,6 +897,10 @@ function renderRace(v, race) {
     </div></details>
   </div>`;
   $("back").onclick = () => { history.back(); };
+  const rf = $("recofill"); if (rf) rf.onclick = () => { const r = recoShape(race); if (!r) return; S.b = { ...r.b, cols: r.b.cols.map(c => [...c]), box: [...r.b.box], unit: S.b.unit || 100 }; render(); const bl = document.querySelector(".builder"); if (bl) bl.scrollIntoView({ behavior: "smooth" }); };
+  const rc = $("recocopy"); if (rc) rc.onclick = async () => { const r = recoShape(race); if (!r) return; const txt = `${race.place}${race.r}R ${shapeText(r.b)}　${combosOf(r.b).length}点`;
+    try { await navigator.clipboard.writeText(txt); rc.textContent = "コピーしました"; } catch { rc.textContent = "コピーできません"; } };
+  v.querySelectorAll("[data-yoso]").forEach(el => el.onclick = () => askYoso(el.dataset.yoso, S.data.ds));
   v.querySelectorAll("[data-go]").forEach(el => el.onclick = () => { S.open = el.dataset.go; S.b = { kind: "3連複", way: "form", cols: [[], [], []], box: [], unit: S.b.unit || 100 }; render(); window.scrollTo(0, 0); });
   v.querySelectorAll("[data-kind]").forEach(el => el.onclick = () => { b.kind = el.dataset.kind; render(); });
   v.querySelectorAll("[data-way]").forEach(el => el.onclick = () => { b.way = el.dataset.way; render(); });
