@@ -706,7 +706,8 @@ function bindAsa(v) { const b = v.querySelector("#asabtn"); if (b) b.onclick = (
 async function autoRefresh() {
   const ck = clock(); if (!cfg()?.token || !S.data || S.data.ds !== ck.ds || ck.hm < 12 * 60 || ck.hm > 16 * 60 + 40 || S.busy) return;
   const t = S.data.now_time ? new Date(S.data.now_time.replace(" ", "T") + "+09:00") : null;
-  if (t && Date.now() - t < 20 * 60000) return;
+  const lacks = !S.data.races.some(r => r.now && r.horses.some(h => h.ft));   // 要素ごとの印の無い古い形の予想（PC が載せた物など）は新しくても出し直す
+  if (t && Date.now() - t < 20 * 60000 && !lacks) return;
   const cur = await ghRead("requests/yoso.json").catch(() => null);
   if (cur?.data?.at && Date.now() - new Date(cur.data.at) < 15 * 60000) return;
   S.busy = true; try { await askYoso("now", S.data.ds, true); } finally { S.busy = false; }
