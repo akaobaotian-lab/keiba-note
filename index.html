@@ -649,6 +649,7 @@ function renderYoso() {
   const dayRet = settled.reduce((s, r) => s + myBets(r).reduce((t, b) => t + (betReturn(r, b) || 0), 0), 0);
   const settledCost = settled.reduce((s, r) => s + myBets(r).reduce((t, b) => t + b.cost, 0), 0);
   v.innerHTML = `<div class="list">
+    ${S.data.missing && S.data.missing.length ? `<p class="warn"><b>重賞の予想が抜けています: ${esc(S.data.missing.join("・"))}</b>。「今のオッズで出し直す」を押すか、少し待ってから日付を選び直してください。</p>` : ""}
     <div class="panel today">
       ${hasP ? `<div class="row"><span class="lab">狙い目（三連複1万円以上が 60%以上・これから走るレース）</span>
         ${picks.length ? `<div class="quick">${picks.map(r => `<button class="pickb" data-rid="${r.rid}"><b>${Math.round(pOf(r) * 100)}%</b> ${esc(r.place)}${r.r}R <small>${r.post}</small></button>`).join("")}</div>` : `<span class="note">いまは 60%以上のレースがありません。</span>`}</div>
