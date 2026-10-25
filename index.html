@@ -620,6 +620,11 @@ function clock() { const d = new Date(); const p = n => String(n).padStart(2, "0
 function untilText(m) { return m < 60 ? `あと${m}分` : `あと${Math.floor(m / 60)}時間${m % 60 ? (m % 60) + "分" : ""}`; }
 // 荒れ度はオッズとのずれで決まるので、発走前のオッズで出し直したレース（今）か結果が出たレースだけ出す。前日・朝の判定は出さない
 function oddsReady(r) { return !!(r.now || r.result); }
+// 道悪の注意（本人 2026-10-25「不良馬場の荒れを予想に反映して」）。2022-07〜 の全レースの数字。荒れ度（are_p）にも芝の重・不良とダートの不良を入れてある
+const DOROWARU = { "芝重": "芝の重馬場: 過去、三連複1万円以上は 40%（オッズの見込み 38%）、1番人気の3着内は 55%（良は 66%）",
+  "芝不": "芝の不良馬場: 過去、三連複1万円以上は 45%（オッズの見込み 38%）、1番人気の3着内は 43%（良は 66%）。人気馬を信用しすぎない",
+  "ダ不": "ダートの不良馬場: 過去、三連複1万円以上は 36%（オッズの見込み 34%）。1番人気の3着内は 65% で、良とほぼ同じ" };
+function badBaba(r) { const g = r.going || (r.result && r.result.going); return g ? DOROWARU[r.surf + g] || "" : ""; }
 function pOf(r) { return oddsReady(r) ? r.are_p ?? r.p10k ?? r.p10k_final ?? null : null; }   // are_p＝総合の印とオッズのずれで出した荒れ度（inshi.py now）
 // 左の大きい数字: 三連複が1万円以上になる確率。その数字が無いレースは判定の言葉
 function pcBox(r) {
@@ -667,7 +672,7 @@ function renderYoso() {
         ${pcBox(r)}
         <span class="bd">
         <span class="l1"><span class="t">${r.post}</span><span class="nm">${esc(r.place)}${r.r}R</span>${next === r ? `<span class="tag nx">次 ${untilText(postMin(r) - ck.hm)}</span>` : ""}${r.now ? `<span class="tag mute">今</span>` : ""}</span>
-        <span class="sub">${esc(r.title)}・${r.surf}${r.dist}・${r.heads}頭</span>
+        <span class="sub">${esc(r.title)}・${r.surf}${r.dist}・${r.heads}頭${badBaba(r) ? `・<b class="leak">${r.surf}${r.going || r.result.going}</b>` : ""}</span>
         ${r.mark ? `<span class="l2">${r.mark.slice(0, 6).map((n, i) => `<span class="mkn">${MK[i]}${chipNum(n, r.heads)}</span>`).join("")}</span>` : ""}
         ${anaList(r).length ? `<span class="sub"><b class="ana">穴候補 ${anaList(r).map(x => x.num).join("・")}</b></span>` : ""}
         ${keshiNums(r).length ? `<span class="sub">消し ${keshiNums(r).join("・")}</span>` : ""}
@@ -778,6 +783,7 @@ function renderRace(v, race) {
     <div class="rh">${pcBox(race)}<div><h3>${race.post} ${esc(race.place)}${race.r}R ${esc(race.title)}</h3>
       <p class="note">${race.surf}${race.dist}m・${race.heads}頭${pOf(race) != null ? "・左は三連複が1万円以上になる確率（平均 36%）" : ""}${race.now ? `・${esc(race.odds_time.slice(11, 16))} のオッズ` : ""}</p></div></div>
     ${res ? `<p class="note"><b class="res1">結果 ${res.top3.join("-")}</b>（${res.top3.map(n => res.ninki[n]).join("-")}人気）三連複 ${yen(res.fuku3[0][1])}・馬場 ${esc(res.going)}</p>` : ""}
+    ${badBaba(race) ? `<p class="warn">${esc(badBaba(race))}</p>` : ""}
     ${ks.length ? `<p class="note"><b class="leak">消し ${ks.join("・")}</b>（7番人気以下で悪い印が重なった馬）</p>` : ""}
     ${race.flow ? `<p class="note">展開の見込み（オッズ無し）: 前残り ${Math.round(race.flow[0] * 100)}%／平均 ${Math.round(race.flow[1] * 100)}%／差し ${Math.round(race.flow[2] * 100)}%。逃げそうな馬 ${race.horses.filter(h => !h.cancel && h.ld != null).sort((a, c) => c.ld - a.ld).slice(0, 2).map(h => `${h.num}（${Math.round(h.ld * 100)}%）`).join("・")}</p>` : ""}
     ${an.length && (an[0].mode === "now" || an[0].mode === "data") ? `<div class="note"><b class="ana">穴候補</b>（${an[0].mode === "now" ? "今の7番人気以下を、データの評価（人気・オッズなし）＋前走の内容の順に" : "人気・オッズを使わずに選んだ見直せる馬。データの評価4〜9位で、前走の内容が着順より良い馬"}）${an.map(x =>
