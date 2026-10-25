@@ -262,6 +262,7 @@ async function loadDays() {
 async function loadDay(ds) {
   if (!ds) { S.data = null; render(); return; }
   S.data = await getDay(ds); S.open = null; render();
+  autoRefresh();
 }
 $("day").addEventListener("change", e => { S.day = e.target.value; try { localStorage.setItem("keiba.day", S.day); } catch {} loadDay(S.day); });
 
@@ -557,7 +558,7 @@ function anaList(race, pop) {
 // 強さ・枠・脚質・距離・騎手・総合はオッズを見ない。当日と目印（危・狙）は発走前のオッズで出し直した時だけ
 function inshiPanel(race, pop) {
   const hs = race.horses.filter(h => !h.cancel && h.f);
-  const K = ["強さ", "枠", "脚質", "距離", "騎手", "血統", "総合"].filter(k => hs.some(h => h.f[k] != null)); const hasT = race.now && hs.some(h => h.ft);
+  const K = ["強さ", "枠", "脚質", "距離", "騎手", "血統", "馬場", "総合"].filter(k => hs.some(h => h.f[k] != null)); const hasT = race.now && hs.some(h => h.ft);
   const mark = k => !k ? "" : k <= 5 ? MK[k - 1] : k;
   const cell = k => `<td class="c${k && k <= 3 ? " res1" : ""}">${mark(k)}</td>`;
   const odr = race.result ? n => race.result.ninki[n] : n => pop.indexOf(n) + 1;
@@ -568,7 +569,7 @@ function inshiPanel(race, pop) {
   return `<div class="panel"><details class="cl" open style="min-width:0"><summary>要素ごとの印</summary>
     ${hasT ? `<p class="note">${dz.length ? `<b class="leak">危ない人気馬 ${dz.map(h => h.num).join("・")}</b>（1〜3番人気なのに理由が0〜1個か総合6位以下）　` : ""}${nr.length ? `<b class="ana">狙い ${nr.map(h => h.num).join("・")}</b>（4〜6番人気で総合3位以内、または7番人気以下で理由3個以上）` : ""}${!dz.length && !nr.length ? "危ない人気馬・狙いはいません。" : ""}</p>` : `<p class="note">当日の印・危ない人気馬・狙いは、発走前のオッズで出し直した時に出ます。</p>`}
     <div class="tw"><table class="fac"><thead><tr><th>馬</th>${K.map(k => `<th class="c">${k.slice(0, 1)}</th>`).join("")}${hasT ? `<th class="c">当</th>` : ""}<th class="r">人</th>${race.result ? `<th class="r">着</th>` : ""}</tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="note">並びは総合の順。印はメンバーの中での順位（◎○▲△△、6位から下は数字）。強＝強さ（過去のレースの内容）、枠＝枠・馬番、脚＝脚質（位置取りとコースの相性）、距＝距離・コースの得意、騎＝騎手、血＝血統（父・母父の芝ダ・距離・コースの向き）、総＝全部を踏まえた印（ここまでオッズ・人気は見ない）${hasT ? "、当＝当日（総合＋今のオッズ＋馬体重）" : ""}、人＝人気。理由＝強さ・枠・脚質・距離・騎手・血統のうちメンバー内3位以内の数。
+    <p class="note">並びは総合の順。印はメンバーの中での順位（◎○▲△△、6位から下は数字）。強＝強さ（過去のレースの内容）、枠＝枠・馬番、脚＝脚質（位置取りとコースの相性）、距＝距離・コースの得意、騎＝騎手、血＝血統（父・母父の芝ダ・距離・コースの向き）、場＝馬場（今日の馬場状態と道悪の得意不得意、今日終わったレースで前・内のどちらが来ているか）、総＝全部を踏まえた印（ここまでオッズ・人気は見ない）${hasT ? "、当＝当日（総合＋今のオッズ・人気＋馬体重＋馬場）" : ""}、人＝人気。理由＝強さ・枠・脚質・距離・騎手・血統・馬場のうちメンバー内3位以内の数。
     過去の確かめ（2025-07〜2026-10、1勝クラス以上・10頭以上）: 危ない人気馬の3着内は 40%（ほかの1〜3番人気は 52%）。狙いは 4〜6番人気で 32%（ほかは 26%）、7番人気以下で 15%（ほかは 8%）。どれも複勝の回収は100%に届きません。</p>
   </details></div>`;
 }
@@ -700,9 +701,21 @@ function asaCtl() {
     <p class="note">${S.kekkaMsg || "結果を取る＝終わったレースの結果（1〜3分）。今のオッズで出し直す＝これから走るレースの印・荒れ度（5〜10分）。予想を作る＝その日の予想を一から（20〜30分。出馬表が出てから）。"}</p>`;
 }
 function bindAsa(v) { const b = v.querySelector("#asabtn"); if (b) b.onclick = () => { const ds = v.querySelector("#asaday").value; if (ds) askYoso("asa", ds); }; }
+// アプリを開いた時の自動の出し直し（本人 2026-10-25。GitHub の決まった時刻の実行は遅れたり飛んだりするため）。
+// 今日の分で 12:00〜16:40 の間、今のオッズでの出し直しが20分以上前なら頼む。誰かが15分以内に頼んでいれば頼まない
+async function autoRefresh() {
+  const ck = clock(); if (!cfg()?.token || !S.data || S.data.ds !== ck.ds || ck.hm < 12 * 60 || ck.hm > 16 * 60 + 40 || S.busy) return;
+  const t = S.data.now_time ? new Date(S.data.now_time.replace(" ", "T") + "+09:00") : null;
+  if (t && Date.now() - t < 20 * 60000) return;
+  const cur = await ghRead("requests/yoso.json").catch(() => null);
+  if (cur?.data?.at && Date.now() - new Date(cur.data.at) < 15 * 60000) return;
+  S.busy = true; try { await askYoso("now", S.data.ds, true); } finally { S.busy = false; }
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) autoRefresh(); });
+setInterval(() => { if (!document.hidden) autoRefresh(); }, 5 * 60000);
 // 予想の出し直しを頼んで、days/<日付>.json が変わるまで待つ（今＝5〜10分、朝＝20〜30分）
-async function askYoso(mode, ds) {
-  const name = mode === "asa" ? "予想づくり" : "出し直し";
+async function askYoso(mode, ds, auto) {
+  const name = (auto ? "自動の" : "") + (mode === "asa" ? "予想づくり" : "今のオッズでの出し直し");
   try { await ask("yoso", { day: ds.replaceAll("-", ""), mode }, `${name} ${ds}`); }
   catch (e) { S.kekkaMsg = "頼めませんでした（" + (e.code || e.message) + "）"; render(); return; }
   const sig = d => d ? (d.now_time || "") + "|" + (d.fixed || "") + "|" + d.races.length : "";
