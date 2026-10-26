@@ -468,7 +468,7 @@ function quickFill(race, what) {
 function recoShape(race) {
   const hs = race.horses.filter(h => !h.cancel && h.f);
   if (hs.length < 5) return null;
-  const maiden = /未勝利/.test(race.title);   // 未勝利戦は総合の印（オッズなし）で、相手4頭・3頭目まで7頭（確認期間で回収 86%、人気順 76%。2026-10-26 血統の漏れを減らして確かめ直し）
+  const maiden = /未勝利/.test(race.title);   // 未勝利戦は総合の印（オッズなし）で、相手4頭・3頭目まで7頭（確認期間で回収 77%、人気順 76%。2026-10-26 血統を全部の馬で取り直して確かめ直し）
   const useT = !maiden && !!race.now && hs.some(h => h.ft);
   const rk = h => useT ? (h.ft || 99) : h.f.総合;
   const ord = hs.slice().sort((a, b) => (rk(a) - rk(b)) || a.num - b.num);
@@ -491,8 +491,8 @@ function recoShape(race) {
   if (add.length) why.push(`${add.join("・")} は狙い・道◎なので相手に足す`);
   const ex = ord.filter(bad).map(h => h.num); if (ex.length) why.push(`${ex.join("・")} は道×・道×後なので外す`);
   why.push(maiden ? "未勝利戦なので、荒れ度に関係なく相手 4頭・3頭目まで 7頭" : `荒れ度 ${p == null ? "—（オッズ待ち。平均として）" : Math.round(p * 100) + "%"} → 相手 ${n2}頭・3頭目まで ${n3}頭`);
-  why.push(maiden ? "過去の確かめ（未勝利戦、2025年7月〜2026年10月）: この組み方の回収 86%。人気順で同じ組み方は 76%。以前お伝えした 114〜129% は、血統の取り方の偏り（勝ち上がった馬だけ血統があった）で良く見えすぎていた"
-                  : "過去の確かめ（1勝クラス以上、2025年7月〜2026年10月）: この組み方の回収 74%前後。人気順で同じ組み方は 77〜79% で、人気順とほぼ同じか少し下");
+  why.push(maiden ? "過去の確かめ（未勝利戦、2025年7月〜2026年10月）: この組み方の回収 77%。人気順で同じ組み方は 76%。以前お伝えした 114〜129% や 86% は、血統の取り方の偏り（勝ち上がった馬だけ血統があった）で良く見えすぎていた"
+                  : "過去の確かめ（1勝クラス以上、2025年7月〜2026年10月）: この組み方の回収 72〜73%。人気順で同じ組み方は 77% で、人気順より少し下");
   return { b: { kind: "3連複", way: "form", cols: [[axis.num], c2, c3], box: [] }, why, useT };
 }
 function recoPanel(race) {
@@ -504,7 +504,7 @@ function recoPanel(race) {
     hit = `<p class="note"><b class="${got ? "res1" : "leak"}">${got ? `的中 ${yen(res.fuku3[0][1])}（${n}点 ${yen(n * 100)}）` : `外れ（結果 ${res.top3.join("-")}）`}</b></p>`; }
   const age = r.useT && race.odds_time ? `${esc(race.odds_time.slice(11, 16))} のオッズ` : "総合の印（オッズを見ない）";
   return `<div class="panel reco"><h2>おすすめの買い目 <small class="note">${age}</small></h2>
-    <div class="shape">${shapeHtml(r.b)}</div><p class="note"><b>${n}点 ${yen(n * 100)}</b>（1点100円）　${/未勝利/.test(race.title) ? `<span>未勝利戦：過去の回収 86%（人気順 76%）</span>` : `<span>1勝クラス以上：過去の回収 74%前後（人気順 77〜79%）</span>`}</p>${hit}
+    <div class="shape">${shapeHtml(r.b)}</div><p class="note"><b>${n}点 ${yen(n * 100)}</b>（1点100円）　${/未勝利/.test(race.title) ? `<span>未勝利戦：過去の回収 77%（人気順 76%）</span>` : `<span>1勝クラス以上：過去の回収 72〜73%（人気順 77%）</span>`}</p>${hit}
     <div class="quick"><button id="recofill" class="primary">買い目に入れる</button><button id="recocopy">コピー</button>${!res ? `<button data-yoso="now">今のオッズで出し直す</button>` : ""}</div>
     <details class="cl"><summary>この買い目の決め方</summary><p class="note">${r.why.map(esc).join("<br>")}</p></details></div>`;
 }
@@ -606,7 +606,7 @@ function anaList(race, pop) {
 // 強さ・枠・脚質・距離・騎手・総合はオッズを見ない。当日と目印（危・狙）は発走前のオッズで出し直した時だけ
 function inshiPanel(race, pop) {
   const hs = race.horses.filter(h => !h.cancel && h.f);
-  const K = ["強さ", "枠", "脚質", "距離", "騎手", "血統", "馬場", "コース", "総合"].filter(k => hs.some(h => h.f[k] != null)); const hasT = race.now && hs.some(h => h.ft);
+  const K = ["強さ", "枠", "脚質", "距離", "騎手", "血統", "馬場", "コース", "展開", "総合"].filter(k => hs.some(h => h.f[k] != null)); const hasT = race.now && hs.some(h => h.ft);
   const mark = k => !k ? "" : k <= 5 ? MK[k - 1] : k;
   const cell = k => `<td class="c${k && k <= 3 ? " res1" : ""}">${mark(k)}</td>`;
   const odr = race.result ? n => race.result.ninki[n] : n => pop.indexOf(n) + 1;
@@ -618,8 +618,8 @@ function inshiPanel(race, pop) {
     ${hasT ? `<p class="note">${dz.length ? `<b class="leak">危ない人気馬 ${dz.map(h => h.num).join("・")}</b>（1〜3番人気なのに理由が0〜1個か総合6位以下）　` : ""}${nr.length ? `<b class="ana">狙い ${nr.map(h => h.num).join("・")}</b>（4〜6番人気で総合3位以内、または7番人気以下で理由3個以上）` : ""}${!dz.length && !nr.length ? "危ない人気馬・狙いはいません。" : ""}</p>
       ${dg.length || dk.length || db.length ? `<p class="note">${dg.length ? `<b class="ana">道悪が得意 ${dg.map(h => h.num + "（" + (pop.indexOf(h.num) + 1) + "人気）").join("・")}</b>　` : ""}${dk.length ? `<b class="leak">道悪が苦手 ${dk.map(h => h.num).join("・")}</b>　` : ""}${db.length ? `<b class="leak">後ろから行く人気薄 ${db.map(h => h.num).join("・")}</b>（道×後。過去の重・不良で複勝回収 芝 43〜67%・ダート 50〜62%。ヒモから外す目安）` : ""}<br>今日は${esc(race.surf)}の${esc(race.going || "")}。過去（2022-07〜）の重・不良で、道悪が得意な馬は 芝で複勝回収 137〜158%・単勝 142〜214%、ダートで複勝 102〜111%（前半・後半とも）。芝で道悪が苦手な馬は3着内 11%・複勝 37%。道悪の経験が少ない馬は、前・中団で運ぶ人気薄の方が残る（複勝 60〜100%）。当たった時の配当が変わるので、ヒモに入れる・人気でも外すの判断に使ってください。</p>` : ""}` : `<p class="note">当日の印・危ない人気馬・狙いは、発走前のオッズで出し直した時に出ます。</p>`}
     <div class="tw"><table class="fac"><thead><tr><th>馬</th>${K.map(k => `<th class="c">${k.slice(0, 1)}</th>`).join("")}${hasT ? `<th class="c">当</th>` : ""}<th class="r">人</th>${race.result ? `<th class="r">着</th>` : ""}</tr></thead><tbody>${rows}</tbody></table></div>
-    <p class="note">並びは総合の順。印はメンバーの中での順位（◎○▲△△、6位から下は数字）。強＝強さ（過去のレースの内容）、枠＝枠・馬番、脚＝脚質（位置取りとコースの相性）、距＝距離・コースの得意、騎＝騎手、血＝血統（父・母父の芝ダ・距離・コースの向き）、場＝馬場（今日の馬場状態と道悪の得意不得意、今日終わったレースで前・内のどちらが来ているか）、コ＝コース（その競馬場・同じコース・右回り左回りの得意不得意。得意な馬は来やすいが人気になりやすく、苦手と出た7番人気以下は過去 複勝回収 79%・単勝 121% と割安なことがある）、総＝全部を踏まえた印（ここまでオッズ・人気は見ない）${hasT ? "、当＝当日（総合＋今のオッズ・人気＋馬体重＋馬場）" : ""}、人＝人気。理由＝強さ・枠・脚質・距離・騎手・血統・馬場・コースのうちメンバー内3位以内の数。
-    過去の確かめ（2025-07〜2026-10、1勝クラス以上・10頭以上）: 危ない人気馬の3着内は 39%（ほかの1〜3番人気は 51%）。狙いは 4〜6番人気で 31%（ほかは 27%）、7番人気以下で 14%（ほかは 8%）。どれも複勝の回収は100%に届きません。</p>
+    <p class="note">並びは総合の順。印はメンバーの中での順位（◎○▲△△、6位から下は数字）。強＝強さ（過去のレースの内容）、枠＝枠・馬番、脚＝脚質（位置取りとコースの相性）、距＝距離・コースの得意、騎＝騎手、血＝血統（父・母父の芝ダ・距離・コースの向き）、場＝馬場（今日の馬場状態と道悪の得意不得意、今日終わったレースで前・内のどちらが来ているか）、コ＝コース（その競馬場・同じコース・右回り左回りの得意不得意。得意な馬は来やすいが人気になりやすく、苦手と出た7番人気以下は過去 複勝回収 79%・単勝 121% と割安なことがある）、展＝展開（過去のレースのラップから、前半が速い・遅い流れでの走りと今回の流れの見込み）、総＝全部を踏まえた印（ここまでオッズ・人気は見ない）${hasT ? "、当＝当日（総合＋今のオッズ・人気＋馬体重＋馬場）" : ""}、人＝人気。理由＝強さ・枠・脚質・距離・騎手・血統・馬場・コース・展開のうちメンバー内3位以内の数。
+    過去の確かめ（2025-07〜2026-10、1勝クラス以上・10頭以上）: 危ない人気馬の3着内は 38%（ほかの1〜3番人気は 51%）。狙いは 4〜6番人気で 31%（ほかは 27%）、7番人気以下で 13%（ほかは 8%）。どれも複勝の回収は100%に届きません。</p>
   </details></div>`;
 }
 function factorPanel(race, pop) {
