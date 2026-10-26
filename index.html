@@ -116,7 +116,7 @@ button { min-height: 40px; }
 .rc .l2 { flex-wrap: nowrap; gap: 3px; font-size: .76rem; overflow: hidden; }
 .mkn { display: inline-flex; align-items: center; flex: none; }
 .today .seg button, .pickb { min-height: 40px; }
-.pickb { text-align: left; } .pickb b { color: var(--rough); } .pickb small { color: var(--muted); }
+.pickb { text-align: left; } .pickb b { color: var(--rough); } .pickb small { color: var(--muted); } .pickb small.hit { color: var(--hit); font-weight: 700; }
 .nav { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .navs { display: flex; gap: 6px; }
 .rh { display: flex; gap: 10px; align-items: center; }
@@ -183,7 +183,7 @@ td small { color: var(--muted); margin-left: 3px; }
 const WAKU = ["#ffffff","#1d1d1d","#d8262b","#2059b5","#f1d02c","#2a8a3e","#ef8a1f","#f29bb6"];
 const WAKU_FG = ["#1d1d1d","#ffffff","#ffffff","#ffffff","#1d1d1d","#ffffff","#1d1d1d","#1d1d1d"];
 const MK = "◎○▲△△☆";
-const PAYKEY = {"3連複":"Fuku3","3連単":"Tan3","馬連":"Umaren","ワイド":"Wide","単勝":"Tansho","複勝":"Fukusho"};
+const PAYKEY = {"3連複":"Fuku3","3連単":"Tan3","馬連":"Umaren","ワイド":"Wide","単勝":"Tansho","複勝":"Fukusho","枠連":"Wakuren","馬単":"Umatan"};
 const UNORDERED = new Set(["3連複","馬連","ワイド","枠連"]);
 const S = { days: [], day: null, data: null, cache: {}, open: null, tab: "yoso", bets: [], db: null, dbOk: false,
             b: { kind: "3連複", way: "form", cols: [[],[],[]], box: [], unit: 100 }, parsed: null };
@@ -685,6 +685,28 @@ function pcBox(r) {
 }
 function byTime(rs) { return rs.slice().sort((a, b) => (postMin(a) - postMin(b)) || (a.rid < b.rid ? -1 : 1)); }
 
+// 今日の勝負レース（本人 2026-10-27「一日2万円の買い方」）。当日の印◎の3着内の見込み（pt）が一番高い2レースで、◎と○を複勝 5,000円ずつ
+//   過去の確かめ（2025-01〜2026-10、約200日・確定オッズで選んだ場合）: 回収 100%（1日1レースなら101%）、プラスの日 45%、一番へこんだ時 −5.6万円
+//   全レースに分けて複勝◎だと 85%。三連複・三連単はたまの大当たりで良く見えるだけで、期間を変えると 70〜90%
+function shoubu(rs) {
+  return rs.map(r => { const a = r.horses.find(h => h.ft === 1 && !h.cancel), b = r.horses.find(h => h.ft === 2 && !h.cancel);
+      return r.now && a && b && a.pt != null ? { r, a, b } : null; })
+    .filter(Boolean).sort((x, y) => y.a.pt - x.a.pt).slice(0, 2);
+}
+function shoubuPanel(rs) {
+  const top = shoubu(rs);
+  const head = `<span class="lab">今日の勝負レース（一日2万円なら、この2レースの◎○を複勝 5,000円ずつ）</span>`;
+  if (!top.length) return `<div class="row">${head}<span class="note">オッズで出し直したレースが出たら、ここに出ます。</span></div>`;
+  let cost = 0, ret = 0;
+  const items = top.map(({ r, a, b }) => {
+    const pay = n => payOf(r, "複勝", [n]);
+    const got = r.result ? pay(a.num) * 50 + pay(b.num) * 50 : null;
+    if (got !== null) { cost += 10000; ret += got; }
+    return `<button class="pickb" data-rid="${r.rid}"><b>${Math.round(a.pt * 100)}%</b> ${esc(r.place)}${r.r}R <small>${r.post}</small> ◎${a.num} ○${b.num}${got !== null ? ` <small class="${got ? "hit" : ""}">→ ${yen(got)}</small>` : ""}</button>`; });
+  return `<div class="row">${head}<div class="quick">${items.join("")}</div>
+    <p class="note">%は◎が3着以内に来る見込み。オッズで出し直したレースの中で、見込みが高い順に2つです。後のレースのオッズが出ると入れ替わることがあります。${cost ? ` 結果が出た分: ${yen(cost)} → ${yen(ret)}。` : ""}
+    過去の確かめ（2025年1月〜2026年10月、約200日）: この買い方で回収 約100%（全レースに分けて買うと 85%）。儲かる買い方ではなく「減りにくい」買い方で、途中で5万円ほど減る時期もありました。</p></div>`;
+}
 function renderYoso() {
   const v = $("v-yoso");
   if (!S.data) { v.innerHTML = `<p class="empty">予想のデータがまだありません。</p><div class="panel">${asaCtl()}</div>`; bindAsa(v); return; }
@@ -705,6 +727,7 @@ function renderYoso() {
   v.innerHTML = `<div class="list">
     ${S.data.missing && S.data.missing.length ? `<p class="warn"><b>重賞の予想が抜けています: ${esc(S.data.missing.join("・"))}</b>。「今のオッズで出し直す」を押すか、少し待ってから日付を選び直してください。</p>` : ""}
     <div class="panel today">
+      ${shoubuPanel(rs)}
       ${hasP ? `<div class="row"><span class="lab">狙い目（三連複1万円以上が 60%以上・これから走るレース）</span>
         ${picks.length ? `<div class="quick">${picks.map(r => `<button class="pickb" data-rid="${r.rid}"><b>${Math.round(pOf(r) * 100)}%</b> ${esc(r.place)}${r.r}R <small>${r.post}</small></button>`).join("")}</div>` : `<span class="note">いまは 60%以上のレースがありません。</span>`}</div>
       <div class="seg" role="group" aria-label="並び"><button data-sort="time" aria-pressed="${sort === "time"}">発走順</button><button data-sort="p" aria-pressed="${sort === "p"}">荒れそうな順</button></div>` : ""}
