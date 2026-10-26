@@ -468,7 +468,7 @@ function quickFill(race, what) {
 function recoShape(race) {
   const hs = race.horses.filter(h => !h.cancel && h.f);
   if (hs.length < 5) return null;
-  const maiden = /未勝利/.test(race.title);   // 未勝利戦は総合の印（オッズなし）で、相手4頭・3頭目まで7頭（確認期間で回収 114%、人気順 76%）
+  const maiden = /未勝利/.test(race.title);   // 未勝利戦は総合の印（オッズなし）で、相手4頭・3頭目まで7頭（確認期間で回収 86%、人気順 76%。2026-10-26 血統の漏れを減らして確かめ直し）
   const useT = !maiden && !!race.now && hs.some(h => h.ft);
   const rk = h => useT ? (h.ft || 99) : h.f.総合;
   const ord = hs.slice().sort((a, b) => (rk(a) - rk(b)) || a.num - b.num);
@@ -491,8 +491,8 @@ function recoShape(race) {
   if (add.length) why.push(`${add.join("・")} は狙い・道◎なので相手に足す`);
   const ex = ord.filter(bad).map(h => h.num); if (ex.length) why.push(`${ex.join("・")} は道×・道×後なので外す`);
   why.push(maiden ? "未勝利戦なので、荒れ度に関係なく相手 4頭・3頭目まで 7頭" : `荒れ度 ${p == null ? "—（オッズ待ち。平均として）" : Math.round(p * 100) + "%"} → 相手 ${n2}頭・3頭目まで ${n3}頭`);
-  why.push(maiden ? "過去の確かめ（未勝利戦）: この組み方の回収 129%（2025年1〜6月）・114%（2025年7月〜2026年10月）。人気順で同じ組み方は 72%・76%"
-                  : "過去の確かめ（1勝クラス以上）: この組み方の回収 76%（2025年7月〜2026年10月）。人気順で同じ組み方は 79% で、人気順とほぼ同じ");
+  why.push(maiden ? "過去の確かめ（未勝利戦、2025年7月〜2026年10月）: この組み方の回収 86%。人気順で同じ組み方は 76%。以前お伝えした 114〜129% は、血統の取り方の偏り（勝ち上がった馬だけ血統があった）で良く見えすぎていた"
+                  : "過去の確かめ（1勝クラス以上、2025年7月〜2026年10月）: この組み方の回収 74%前後。人気順で同じ組み方は 77〜79% で、人気順とほぼ同じか少し下");
   return { b: { kind: "3連複", way: "form", cols: [[axis.num], c2, c3], box: [] }, why, useT };
 }
 function recoPanel(race) {
@@ -504,7 +504,7 @@ function recoPanel(race) {
     hit = `<p class="note"><b class="${got ? "res1" : "leak"}">${got ? `的中 ${yen(res.fuku3[0][1])}（${n}点 ${yen(n * 100)}）` : `外れ（結果 ${res.top3.join("-")}）`}</b></p>`; }
   const age = r.useT && race.odds_time ? `${esc(race.odds_time.slice(11, 16))} のオッズ` : "総合の印（オッズを見ない）";
   return `<div class="panel reco"><h2>おすすめの買い目 <small class="note">${age}</small></h2>
-    <div class="shape">${shapeHtml(r.b)}</div><p class="note"><b>${n}点 ${yen(n * 100)}</b>（1点100円）　${/未勝利/.test(race.title) ? `<b class="ana">未勝利戦：過去の回収 114〜129%</b>` : `<span>1勝クラス以上：過去の回収 76%（人気順 79%）</span>`}</p>${hit}
+    <div class="shape">${shapeHtml(r.b)}</div><p class="note"><b>${n}点 ${yen(n * 100)}</b>（1点100円）　${/未勝利/.test(race.title) ? `<span>未勝利戦：過去の回収 86%（人気順 76%）</span>` : `<span>1勝クラス以上：過去の回収 74%前後（人気順 77〜79%）</span>`}</p>${hit}
     <div class="quick"><button id="recofill" class="primary">買い目に入れる</button><button id="recocopy">コピー</button>${!res ? `<button data-yoso="now">今のオッズで出し直す</button>` : ""}</div>
     <details class="cl"><summary>この買い目の決め方</summary><p class="note">${r.why.map(esc).join("<br>")}</p></details></div>`;
 }
