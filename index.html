@@ -457,6 +457,7 @@ function quickFill(race, what) {
   if (what === "kaikata") { const k = kaikataShape(race); if (!k) return; b.way = k.way; b.box = k.box; b.cols = k.cols; }
   if (what === "mark6") { b.way = "box"; b.box = mk.slice(0, 6); }
   if (what === "mark10") { b.way = "box"; b.box = mk.slice(0, 10); }
+  if (what === "jiku2") { const t = todayOrder(race), ks = keshiNums(race, pop); b.way = "form"; b.cols = [t.slice(0, 1), t.slice(1, 2), t.slice(2, 6).filter(n => !ks.includes(n))]; return; }
   if (what === "keshi") { const ks = keshiNums(race, pop); b.box = b.box.filter(n => !ks.includes(n)); b.cols = b.cols.map(c => c.filter(n => !ks.includes(n))); return; }
   if (what === "mark3") { b.way = "form"; b.cols = [mk.slice(0, 3), mk.slice(0, 6), [...new Set([...mk.slice(0, 3), ...pop.slice(0, 10)])]]; }
   if (what === "clear") { b.cols = [[], [], []]; b.box = []; }
@@ -571,10 +572,20 @@ function areText(race) {
   return head + " → " + (gap < 0 ? `<b style="color:var(--rough)">平均より荒れやすい（${gap}）</b>` : `<b style="color:var(--calm)">平均より堅い（+${gap}）</b>`);
 }
 // 消し: 7番人気以下で、理由の印の点数（良い印の数−悪い印の数）が−3以下の馬。過去の確かめ（2025-01〜2026-10、1勝クラス以上・10頭以上）で3着内 2.9%・複勝回収 43%（7番人気以下の全体は 8.7%・69%）
+// 期待値の消し（2026-10-29 本人「消しに使って三連複で」）: 今のオッズで出し直した後、単勝の期待値（keiba-data の inshi.py。勝つ確率×オッズ）が 0.8 未満の馬。当日の印◎○は消さない
+//   確認期間（2025-07〜2026-10、毎日◎の見込みの高い4レース）の三連複: ◎○2頭軸-全頭 86%→94%、◎○2頭軸-印6頭まで 94.5%→104%（一番良い日を除くと 97%）
+const EV_CUT = 0.8;
+function evKeshi(h) { return h.ev != null && h.ev < EV_CUT && !(h.ft <= 2); }
 function keshiNums(race, pop) {
   pop = pop || popOrder(race);
-  return race.horses.filter(h => !h.cancel && h.cnt != null && h.cnt <= -3 && pop.indexOf(h.num) + 1 >= 7).map(h => h.num).sort((a, b) => a - b);
+  return race.horses.filter(h => !h.cancel && ((h.cnt != null && h.cnt <= -3 && pop.indexOf(h.num) + 1 >= 7) || (race.now && evKeshi(h)))).map(h => h.num).sort((a, b) => a - b);
 }
+function keshiWhy(h) {
+  const bad = h.cnt != null && h.cnt <= -3 ? (h.bad || []).join("／") : "";
+  return [bad, evKeshi(h) ? `単勝の期待値 ${h.ev.toFixed(2)}（オッズの割に来ない）` : ""].filter(Boolean).join("／");
+}
+// 当日の印の順（今のオッズで出し直した後だけ）
+function todayOrder(race) { return race.horses.filter(h => !h.cancel && h.ft).sort((a, b) => a.ft - b.ft).map(h => h.num); }
 // 朝からの売れ方: 今（結果が出た後は確定）の単勝 ÷ 朝の単勝。0.9以下＝売れた、1.1超＝売れていない。朝のオッズしか無い間は null
 function oddsMove(race, h) {
   const cur = race.result ? race.result.odds[h.num] : h.odds;
@@ -854,7 +865,7 @@ function renderRace(v, race) {
   const rows = hs.slice().sort((a, c) => a.num - c.num).map(h => {
     const mi = mk.indexOf(h.num); const md = race.model ? race.model.indexOf(h.num) : -1;
     const rk = res ? res.rank[h.num] : null;
-    return `<tr><td>${chipNum(h.num, race.heads)}</td><td class="nmc">${esc(h.name)}<small>${esc(h.jockey)}・${h.runs}走</small>${ks.includes(h.num) ? `<small class="leak">消し: ${esc((h.bad || []).join("／"))}</small>` : ""}</td>
+    return `<tr><td>${chipNum(h.num, race.heads)}</td><td class="nmc">${esc(h.name)}<small>${esc(h.jockey)}・${h.runs}走</small>${ks.includes(h.num) ? `<small class="leak">消し: ${esc(keshiWhy(h))}</small>` : ""}</td>
       <td class="r">${h.odds ?? "-"}</td><td class="r">${h.ninki ?? "-"}</td><td>${mi >= 0 && mi < 6 ? MK[mi] : mi >= 0 ? mi + 1 : ""}${ks.includes(h.num) ? `<b class="leak">消</b>` : ""}</td>
       <td class="r">${h.pb != null ? pc1(h.pb) : ""}</td><td class="r">${md >= 0 ? md + 1 : ""}${h.pm != null ? `<small>${pc1(h.pm)}</small>` : ""}</td>${race.p_misho ? `<td class="r">${race.p_misho[h.num] != null ? Math.round(race.p_misho[h.num] * 100) + "%" : ""}</td>` : ""}
       ${res ? `<td class="r ${rk && rk <= 3 ? "res1" : ""}">${rk ?? "除"}</td><td class="r">${res.odds[h.num] ?? ""}</td>` : ""}</tr>`;
@@ -880,7 +891,7 @@ function renderRace(v, race) {
   </div>
   ${recoPanel(race)}
   <div class="panel">
-    ${ks.length ? `<p class="note"><b class="leak">消し ${ks.join("・")}</b>（7番人気以下で悪い印が重なった馬）</p>` : ""}
+    ${ks.length ? `<p class="note"><b class="leak">消し ${ks.join("・")}</b>（7番人気以下で悪い印が重なった馬${race.now ? "と、単勝の期待値が 0.8 未満の馬。◎○は消さない" : ""}）</p>` : ""}
     ${race.flow ? `<p class="note">展開の見込み（オッズ無し）: 前残り ${Math.round(race.flow[0] * 100)}%／平均 ${Math.round(race.flow[1] * 100)}%／差し ${Math.round(race.flow[2] * 100)}%。逃げそうな馬 ${race.horses.filter(h => !h.cancel && h.ld != null).sort((a, c) => c.ld - a.ld).slice(0, 2).map(h => `${h.num}（${Math.round(h.ld * 100)}%）`).join("・")}</p>` : ""}
     ${an.length && (an[0].mode === "now" || an[0].mode === "data") ? `<div class="note"><b class="ana">穴候補</b>（${an[0].mode === "now" ? "今の7番人気以下を、データの評価（人気・オッズなし）＋前走の内容の順に" : "人気・オッズを使わずに選んだ見直せる馬。データの評価4〜9位で、前走の内容が着順より良い馬"}）${an.map(x =>
         `<p><b class="ana">${x.num} ${esc(x.name)}</b> ${x.pop ? x.pop + "番人気・" : ""}データ${x.rank}位（3着内 ${Math.round(x.p3a * 100)}%）<br>${whyHtml(x.why)}</p>`).join("")}</div>`
@@ -896,7 +907,7 @@ function renderRace(v, race) {
     <h2>買い目をつくる</h2>
     <div class="seg" role="group" aria-label="券種">${["3連複", "3連単", "馬連", "ワイド", "単勝", "複勝"].map(k => `<button data-kind="${k}" aria-pressed="${b.kind === k}">${k}</button>`).join("")}</div>
     <div class="seg" role="group" aria-label="買い方"><button data-way="form" aria-pressed="${b.way === "form"}">フォーメーション</button><button data-way="box" aria-pressed="${b.way === "box"}">ボックス</button></div>
-    <div class="quick"><span class="note">すぐ入れる:</span>${race.mark ? `<button data-q="mark6">印6頭ボックス</button><button data-q="mark10">印10頭ボックス</button><button data-q="mark3">印3頭→印6→人気10</button>` : ""}${kk ? `<button data-q="kaikata">作業1の買い方</button>` : ""}${an.length ? `<button data-q="ana">穴候補を3頭目に足す</button>` : ""}${ks.length ? `<button data-q="keshi">消しを外す</button>` : ""}<button data-q="clear">選び直す</button></div>
+    <div class="quick"><span class="note">すぐ入れる:</span>${race.mark ? `<button data-q="mark6">印6頭ボックス</button><button data-q="mark10">印10頭ボックス</button><button data-q="mark3">印3頭→印6→人気10</button>` : ""}${kk ? `<button data-q="kaikata">作業1の買い方</button>` : ""}${an.length ? `<button data-q="ana">穴候補を3頭目に足す</button>` : ""}${ks.length ? `<button data-q="keshi">消しを外す</button>` : ""}${race.now && todayOrder(race).length >= 3 ? `<button data-q="jiku2">◎○軸→印6頭まで（消しを外す）</button>` : ""}<button data-q="clear">選び直す</button></div>
     <div class="seg" role="group" aria-label="馬の並び"><span class="note">並び:</span>${[["num", "馬番順"], ...(hasP ? [["yoso", "予想順"]] : []), ...(hasT ? [["tenkai", "展開順"]] : []), ...(hasP ? [["model", "モデル順"]] : []), ["pop", "人気順"]].map(([k, t]) => `<button data-hsort="${k}" aria-pressed="${hsort === k}">${t}</button>`).join("")}</div>
     <div class="pick">
       <div class="hr hd"><span></span><div class="hn">${hasP ? "名前の前＝予想順" : "印・オッズ・人気"}</div><div class="pks">${colIds.map(id => `<span class="pkh">${colLab(id)}<small>${selOf(id).length}頭</small></span>`).join("")}</div></div>
