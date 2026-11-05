@@ -456,6 +456,7 @@ function shapeHtml(b) {
 function quickFill(race, what) {
   const b = S.b; const pop = popOrder(race); const mk = race.mark || pop;
   if (what === "ana") { const an = anaList(race, pop).map(x => x.num); if (b.way === "box") b.box = [...new Set([...b.box, ...an])]; else { const i = needOf(b.kind) - 1; b.cols[i] = [...new Set([...b.cols[i], ...an])]; } return; }
+  if (what === "jusho3t" || what === "jusho3f") { const j = jushoShape(race, what === "jusho3t" ? "3連単" : "3連複"); if (!j) return; b.kind = j.b.kind; b.way = "form"; b.cols = j.b.cols.map(c => [...c]); b.box = []; return; }
   if (what !== "keshi") b.kind = "3連複";
   if (what === "kaikata") { const k = kaikataShape(race); if (!k) return; b.way = k.way; b.box = k.box; b.cols = k.cols; }
   if (what === "mark6") { b.way = "box"; b.box = mk.slice(0, 6); }
@@ -497,6 +498,32 @@ function recoShape(race) {
   why.push(maiden ? "過去の確かめ（未勝利戦、2025年7月〜2026年10月）: この組み方の回収 77%。人気順で同じ組み方は 76%。以前お伝えした 114〜129% や 86% は、血統の取り方の偏り（勝ち上がった馬だけ血統があった）で良く見えすぎていた"
                   : "過去の確かめ（1勝クラス以上、2025年7月〜2026年10月）: この組み方の回収 72〜73%。人気順で同じ組み方は 77% で、人気順より少し下");
   return { b: { kind: "3連複", way: "form", cols: [[axis.num], c2, c3], box: [] }, why, useT };
+}
+// ---- 重賞の頭流し（本人 2026-11-06「過去10年の入着した馬の最大人気まで広げた頭流し」） ----
+// 頭＝総合の印（オッズを見ない）の1位、無ければ1番人気。相手＝頭以外で今の人気が「過去10年の3着内の最大人気」以内の馬
+//   過去の確かめ（2025-01〜2026-10 の重賞 223R、確定オッズの人気）: 三連単 118点 123%・三連複 59点 99%。一番大きい当たり1本を除くと 90%・85%
+function jushoShape(race, kind) {
+  const jm = race.jmax; if (!jm) return null;
+  const pop = popOrder(race); if (pop.length < 5) return null;
+  const top = race.horses.find(h => !h.cancel && h.f && h.f.総合 === 1);
+  const head = top ? top.num : pop[0];
+  const aite = pop.filter((n, i) => i + 1 <= jm.mx && n !== head);
+  if (aite.length < 2) return null;
+  return { b: { kind, way: "form", cols: [[head], aite, aite], box: [] }, head, byMark: !!top };
+}
+function jushoPanel(race) {
+  const jm = race.jmax; if (!jm) return "";
+  const t = jushoShape(race, "3連単"), f = jushoShape(race, "3連複");
+  if (!t) return "";
+  const res = race.result;
+  const got = (s, kind) => { if (!res) return ""; const g = combosOf(s.b).reduce((a, c) => a + (payOf(race, kind, c) || 0), 0);
+    return ` <b class="${g ? "res1" : "leak"}">${g ? `→ ${yen(g)}` : "外れ"}</b>`; };
+  const nt = combosOf(t.b).length, nf = combosOf(f.b).length;
+  return `<div class="panel reco"><h2>重賞の頭流し <small class="note">過去${jm.years.length}年の3着内で一番人気が無かったのは <b>${jm.mx}番人気</b></small></h2>
+    <p class="note">年ごとの3着内の一番人気薄: ${jm.years.map(([y, m]) => `${y}年 ${m}番人気`).join("・")}</p>
+    <p class="note">頭（1着）＝${t.byMark ? "総合の印（オッズを見ない）の1位" : "1番人気（総合の印がまだ無い）"} <b>${t.head}</b>、相手＝${res ? "確定" : race.now ? "今の" : "朝の"}人気で ${jm.mx}番人気まで（${t.b.cols[1].length}頭）</p>
+    <div class="quick"><button data-q="jusho3t" class="primary">三連単 ${nt}点 ${yen(nt * 100)}${got(t, "3連単")}</button><button data-q="jusho3f">三連複 ${nf}点 ${yen(nf * 100)}${got(f, "3連複")}</button></div>
+    <p class="note">過去の確かめ（2025年1月〜2026年10月の重賞 223R）: 回収 三連単 123%・三連複 99%。ただし一番大きい当たり1本（2026 フェアリーS 三連単 87.9万円）を除くと 90%・85% で、たまの大当たり頼みです。相手を6番人気までに狭めるより、最大人気まで広げた方が良い結果でした。</p></div>`;
 }
 function recoPanel(race) {
   const r = recoShape(race);
@@ -889,6 +916,7 @@ function renderRace(v, race) {
     ${badBaba(race) ? `<p class="warn">${esc(badBaba(race))}</p>` : ""}
     ${S.kekkaMsg ? `<p class="note">${esc(S.kekkaMsg)}</p>` : ""}
   </div>
+  ${jushoPanel(race)}
   ${recoPanel(race)}
   <div class="panel">
     ${ks.length ? `<p class="note"><b class="leak">消し ${ks.join("・")}</b>（7番人気以下で悪い印が重なった馬）</p>` : ""}
