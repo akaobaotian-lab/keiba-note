@@ -136,6 +136,10 @@ button { min-height: 40px; }
 .ana { color: var(--accent); }
 .why { display: block; font-size: .8rem; line-height: 1.5; }
 .why b { display: inline-block; width: 1.3em; }
+.story .why b { width: auto; margin-right: .3em; }
+.story .hs { margin: 0; padding: 8px 0; border-top: 1px solid var(--line); line-height: 1.5; }
+.story .hs small { color: var(--muted); }
+.story h2 + .note { margin-top: -4px; }
 details.note p { margin: .5rem 0; }
 .hn small span, .hn small b { white-space: nowrap; display: inline-block; margin-right: 4px; }
 .builder .seg { align-items: center; }
@@ -682,6 +686,82 @@ function factorPanel(race, pop) {
     <p class="note">並びは総合の順。印は各要素の中での順位（◎○▲△△、6位から下は数字）。強さ＝過去のレースから見た強さ、脚質＝前に行って残る形が得意（前）か、後ろから差す形が得意（差）か、どちらでもない（平）か。今回一番ありそうな流れ（${race.flow ? ["前残り", "平均", "差し"][fl] : "—"}）に合う馬は色付き。理由＝勝てる理由と勝てない理由の差、総合＝ここまでをまとめた評価（3つともオッズ・人気を見ない）、当日＝オッズ・馬体重も入れた評価。差＝人気の順位−総合の順位。<b class="ana">+3以上</b>は総合の評価より人気が低い馬、<b class="leak">−3以下</b>は総合の評価より人気が高い馬です。ただし過去7日の確かめでは、評価が人気より上の馬はかえって成績が悪く、まだ「狙い」としては使えません。枠・血統・騎手・距離の印は、まだデータが無いので出ていません。</p>
   </details></div>`;
 }
+// ---- 理由を文にする（本人 2026-11-08「勝てる理由、負ける理由など言語化して」） ----
+// レース: 荒れる理由（up）・堅い理由（down）。人気を見ない材料（頭数・印の勝率・過去の似たレース）と、オッズが出た後の危／狙
+const CALM_AVG = n => n <= 10 ? 74 : n <= 13 ? 51 : n <= 15 ? 40 : 36;   // 1勝クラス以上で人気6頭で決着した割合（頭数帯ごとの平均）
+function raceReasons(r) {
+  const up = [], down = []; const hs = r.horses.filter(h => !h.cancel); const n = hs.length;
+  const pw = hs.map(h => h.pm).filter(x => x != null).sort((a, b) => b - a);
+  if (n >= 16) up.push({ s: `${n}頭の多頭数`, l: `${n}頭立て。16頭以上は平均でも三連複1万円以上になりやすい` });
+  else if (n <= 10) down.push({ s: `${n}頭の少頭数`, l: `${n}頭立て。10頭以下は人気6頭で決まることが多い（平均 74%）` });
+  if (pw.length >= 3) {
+    const t3 = pw[0] + pw[1] + pw[2];
+    if (pw[0] < 0.15) up.push({ s: "抜けた馬がいない", l: `◎の勝率でも ${Math.round(pw[0] * 100)}%。データで抜けた馬がいない（上位3頭を足して ${Math.round(t3 * 100)}%）` });
+    else if (pw[0] >= 0.3) down.push({ s: `◎が抜けている（${Math.round(pw[0] * 100)}%）`, l: `◎の勝率 ${Math.round(pw[0] * 100)}%。データで1頭抜けている` });
+    if (pw[0] >= 0.15 && t3 >= 0.6) down.push({ s: "上位3頭で固い", l: `印の上位3頭の勝率を足すと ${Math.round(t3 * 100)}%` });
+    else if (pw[0] >= 0.15 && t3 < 0.4) up.push({ s: "上位3頭も弱い", l: `印の上位3頭の勝率を足しても ${Math.round(t3 * 100)}%` });
+  }
+  const a = r.are;
+  if (a && a.n >= 15 && a.b6 != null) {
+    const avg = CALM_AVG(n);
+    if (a.b6 <= avg - 10) up.push({ s: "過去の似たレースが荒れやすい", l: `条件の近い過去${a.n}Rで、人気6頭で決まったのは ${a.b6}%（同じ頭数帯の平均 ${avg}%）` });
+    else if (a.b6 >= avg + 10) down.push({ s: "過去の似たレースが堅い", l: `条件の近い過去${a.n}Rで、人気6頭で決まったのは ${a.b6}%（同じ頭数帯の平均 ${avg}%）` });
+  }
+  if (r.now) {
+    const dz = hs.filter(h => h.tag === "危").map(h => h.num), nr = hs.filter(h => h.tag === "狙").map(h => h.num);
+    if (dz.length) up.push({ s: `危ない人気馬 ${dz.join("・")}`, l: `危ない人気馬 ${dz.join("・")}（1〜3番人気なのにデータの評価が低い）` });
+    if (nr.length) up.push({ s: `狙い ${nr.join("・")}`, l: `データの評価が人気より高い馬 ${nr.join("・")}` });
+  }
+  if (badBaba(r)) up.push({ s: `${r.surf}${r.going || (r.result && r.result.going)}`, l: badBaba(r) });
+  const last = t => /頭の(多|少)頭数$/.test(t.s) ? 1 : 0;   // 頭数は一覧の行に出ているので、一覧では他の理由を先に
+  return { up: up.sort((a, b) => last(a) - last(b)), down: down.sort((a, b) => last(a) - last(b)) };
+}
+// 馬: 勝てる理由・入るかもしれない理由・負ける理由。tenkai の why（レース内容・前走など）＋要素ごとの順位（inshi の f）＋当日の危／狙／道悪
+const ELEM = { 強さ: "過去のレースの強さ", 騎手: "騎手", コース: "このコースの実績", 距離: "距離の実績", 展開: "展開の向き", 脚質: "脚質とコースの相性", 血統: "血統", 枠: "枠・馬番", 馬場: "今の馬場への向き" };
+function horseWords(race, h, pop) {
+  const w = h.why || {}; const n = race.horses.filter(x => !x.cancel).length;
+  const kachi = [...(w.kachi || [])], maybe = [...(w.maybe || [])], dame = [...(w.dame || [])];
+  if (h.f && n >= 6) {
+    const good = [], bad = [];
+    for (const [k, lab] of Object.entries(ELEM)) {
+      const v = h.f[k]; if (v == null) continue;
+      if (v <= 3) good.push(`${lab}がメンバー${v}位`);
+      else if (v >= n - 2) bad.push(`${lab}がメンバー${v}位（${n}頭中）`);
+    }
+    kachi.push(...good.slice(0, 3)); dame.push(...bad.slice(0, 3));
+  }
+  const pp = pop.indexOf(h.num) + 1;
+  if (race.now && h.tag === "危") dame.unshift(h.f && h.f.総合 >= 6 ? `${pp}番人気なのにデータの評価は${h.f.総合}位（人気先行）`
+    : `${pp}番人気なのに、要素ごとの印で上位3位以内に入るのが${h.f ? h.f.why : "0〜1"}個だけ（人気ほどの裏付けが無い）`);
+  if (race.now && h.tag === "狙") kachi.unshift(`${pp}番人気だがデータの評価は${h.f ? h.f.総合 + "位" : "高い"}`);
+  if (race.now && h.doro === "得") kachi.push("道悪が得意");
+  if (race.now && (h.doro === "苦" || h.doro === "後")) dame.push(h.doro === "苦" ? "道悪が苦手" : "道悪で後ろからになりやすい");
+  return { kachi, maybe, dame };
+}
+function horseStory(race, h, pop) {
+  const mk = race.mark || []; const i = mk.indexOf(h.num); const pp = pop.indexOf(h.num) + 1;
+  const x = horseWords(race, h, pop);
+  const head = `${i >= 0 && i < 6 ? MK[i] + " " : i >= 0 ? (i + 1) + "位 " : ""}${chipNum(h.num, race.heads)} ${esc(h.name)}`;
+  const nums = [h.pm != null ? `勝率 ${h.pm >= 0.095 ? Math.round(h.pm * 100) : (h.pm * 100).toFixed(1)}%` : "", h.p3a != null ? `3着内 ${Math.round(h.p3a * 100)}%` : "", pp ? `${pp}番人気` : ""].filter(Boolean).join("・");
+  const line = (cls, lab, a, none) => a.length || none ? `<span class="why"><b class="${cls}">${lab}</b> ${esc(a.length ? a.join("、") + "。" : none)}</span>` : "";
+  return `<p class="hs"><b>${head}</b> <small>${nums}</small>
+    ${line("ana", "勝てる理由", x.kachi, "目立つ物なし")}${line("", "入るかもしれない", x.maybe, "")}${line("leak", "負ける理由", x.dame, "目立つ物なし")}</p>`;
+}
+function storyPanel(race, pop) {
+  const mk = race.mark || []; if (!mk.length) return "";
+  const x = raceReasons(race); const p = pOf(race);
+  const lead = p == null ? "" : `三連複1万円以上の見込み ${Math.round(p * 100)}%（平均 36%）${race.now || race.result ? "" : "・オッズ無しの朝の数字"}。`;
+  const hs = mk.slice(0, 6).map(n => race.horses.find(h => h.num === n)).filter(h => h && !h.cancel);
+  return `<div class="panel story"><h2>荒れる理由・堅い理由</h2>
+    <p class="note">${esc(lead)}</p>
+    ${x.up.length ? `<span class="why"><b class="leak">荒れる理由</b> ${esc(x.up.map(t => t.l).join("。"))}。</span>` : ""}
+    ${x.down.length ? `<span class="why"><b class="ana">堅い理由</b> ${esc(x.down.map(t => t.l).join("。"))}。</span>` : ""}
+    ${!x.up.length && !x.down.length ? `<span class="why">はっきりした理由はなし（平均的なレース）。</span>` : ""}
+    <h2>印の馬の勝てる理由・負ける理由</h2>
+    ${hs.map(h => horseStory(race, h, pop)).join("")}
+    <p class="note">勝率・3着内はデータだけ（人気・オッズなし）。「○位」は出走馬の中での順位。${race.now ? "危ない人気馬・狙いは今のオッズと照らし合わせた物。" : "人気の欄は参考（印には入れていない）。"}全頭の分はこの下の「全頭の勝てる理由・負ける理由」。</p>
+  </div>`;
+}
 function whyHtml(w) {
   return [["◯", w.kachi, "勝てる理由"], ["△", w.maybe, "入るかもしれない理由"], ["×", w.dame, "勝てない理由"]]
     .filter(x => x[1] && x[1].length).map(([m, a, t]) => `<span class="why"><b>${m}</b>${esc(a.join("／"))}</span>`).join("");
@@ -708,7 +788,8 @@ const DOROWARU = { "芝重": "芝の重馬場: 過去、三連複1万円以上�
   "芝不": "芝の不良馬場: 過去、三連複1万円以上は 45%（オッズの見込み 38%）、1番人気の3着内は 43%（良は 66%）。人気馬を信用しすぎない",
   "ダ不": "ダートの不良馬場: 過去、三連複1万円以上は 36%（オッズの見込み 34%）。1番人気の3着内は 65% で、良とほぼ同じ" };
 function badBaba(r) { const g = r.going || (r.result && r.result.going); return g ? DOROWARU[r.surf + g] || "" : ""; }
-function pOf(r) { return oddsReady(r) ? r.are_p ?? r.p10k ?? r.p10k_final ?? null : null; }   // are_p＝総合の印とオッズのずれで出した荒れ度（inshi.py now）
+// are_p＝総合の印とオッズのずれで出した荒れ度（inshi.py now）。オッズ前は、朝に固定したオッズ無しの％（are10k_today --noodds）を出す（本人 2026-11-08「荒れ度が高くなる見込みがあるものは上位に」）
+function pOf(r) { return oddsReady(r) ? r.are_p ?? r.p10k ?? r.p10k_final ?? null : r.p10k ?? null; }
 // 左の大きい数字: 三連複が1万円以上になる確率。その数字が無いレースは判定の言葉
 function pcBox(r) {
   const p = pOf(r);
@@ -749,7 +830,7 @@ function renderYoso() {
   const done = r => !!r.result || (today && postMin(r) < ck.hm);
   const next = today ? rs.find(r => !done(r)) : null;
   const hasP = rs.some(r => pOf(r) != null);
-  let sort = "time"; try { sort = localStorage.getItem("keiba.sort") || "time"; } catch {}
+  let sort = "p"; try { sort = localStorage.getItem("keiba.sort2") || "p"; } catch {}   // 初めは荒れそうな順（本人 2026-11-08）。前の保存（keiba.sort）は見ない
   if (!hasP) sort = "time";
   const list = sort === "p" ? rs.slice().sort((a, b) => (done(a) - done(b)) || ((pOf(b) ?? -1) - (pOf(a) ?? -1))) : rs;
   const picks = rs.filter(r => !done(r) && (pOf(r) ?? 0) >= 0.595).sort((a, b) => pOf(b) - pOf(a));
@@ -779,6 +860,7 @@ function renderYoso() {
         <span class="bd">
         <span class="l1"><span class="t">${r.post}</span><span class="nm">${esc(r.place)}${r.r}R</span>${next === r ? `<span class="tag nx">次 ${untilText(postMin(r) - ck.hm)}</span>` : ""}${r.now ? `<span class="tag mute">今</span>` : ""}</span>
         <span class="sub">${esc(r.title)}・${r.surf}${r.dist}・${r.heads}頭${badBaba(r) ? `・<b class="leak">${r.surf}${r.going || r.result.going}</b>` : ""}</span>
+        ${(() => { const x = raceReasons(r); const a = x.up.length >= x.down.length ? x.up : x.down; return a.length ? `<span class="sub ${a === x.up ? "leak" : ""}">${a === x.up ? "荒れる理由" : "堅い理由"}: ${esc(a.slice(0, 2).map(t => t.s).join("・"))}</span>` : ""; })()}
         ${r.mark ? `<span class="l2">${fixChanged(r) ? `<span class="fxl">今</span>` : ""}${r.mark.slice(0, 6).map((n, i) => `<span class="mkn">${MK[i]}${chipNum(n, r.heads)}</span>`).join("")}</span>` : ""}
         ${fixChanged(r) ? `<span class="l2 fx"><span class="fxl">${fixLab()}</span>${r.mark_fixed.slice(0, 6).map((n, i) => `<span class="mkn">${MK[i]}${chipNum(n, r.heads)}</span>`).join("")}</span>` : ""}
         ${anaList(r).length ? `<span class="sub"><b class="ana">穴候補 ${anaList(r).map(x => x.num).join("・")}</b></span>` : ""}
@@ -791,7 +873,7 @@ function renderYoso() {
       </button>`; }).join("")}
   </div>`;
   v.querySelectorAll("[data-rid]").forEach(el => el.addEventListener("click", () => { history.pushState({ r: 1 }, ""); S.open = el.dataset.rid; S.b = { kind: "3連複", way: "form", cols: [[], [], []], box: [], unit: S.b.unit || 100 }; render(); window.scrollTo(0, 0); }));
-  v.querySelectorAll("[data-sort]").forEach(el => el.onclick = () => { try { localStorage.setItem("keiba.sort", el.dataset.sort); } catch {} render(); });
+  v.querySelectorAll("[data-sort]").forEach(el => el.onclick = () => { try { localStorage.setItem("keiba.sort2", el.dataset.sort); } catch {} render(); });
   v.querySelectorAll("[data-yoso]").forEach(el => el.onclick = () => askYoso(el.dataset.yoso, S.data.ds)); bindAsa(v);
   const kb = $("kekkabtn"); if (kb) kb.onclick = async () => {
     const ds = S.data.ds; kb.disabled = true;
@@ -916,6 +998,7 @@ function renderRace(v, race) {
     ${badBaba(race) ? `<p class="warn">${esc(badBaba(race))}</p>` : ""}
     ${S.kekkaMsg ? `<p class="note">${esc(S.kekkaMsg)}</p>` : ""}
   </div>
+  ${storyPanel(race, pop)}
   ${jushoPanel(race)}
   ${recoPanel(race)}
   <div class="panel">
@@ -927,8 +1010,8 @@ function renderRace(v, race) {
       : an.length ? `<p class="note"><b class="ana">穴候補</b>（${an[0].mode === "move" ? "朝7番人気以下で、朝から売れた・ほぼ同じ馬。売れた順" : "朝の時点。7番人気以下・展開の3着内率順"}）<br>${an.map(x => x.mode === "move"
         ? `<b class="ana">${x.num} ${esc(x.name)}</b> 朝${x.mpop}番人気 ${x.om}倍 → ${x.cur}倍（${x.mv <= 0.9 ? "売れた" : "ほぼ同じ"}）${x.rank ? `・展開${x.rank}位` : ""}`
         : `<b class="ana">${x.num} ${esc(x.name)}</b> ${x.pop}番人気・3着内 ${Math.round(x.s3 * 100)}%・${x.best}向き`).join("<br>")}</p>` : (race.now || race.result) ? `<p class="note">穴候補はありません（朝7番人気以下で売れている馬がいない）。</p>` : race.flow ? `<p class="note">穴候補はありません（7番人気以下で展開9位以内の馬がいない）。</p>` : ""}
-    ${race.horses.some(h => h.why) ? `<details class="note"><summary>全頭の評価と理由（人気・オッズなし）</summary>${race.horses.filter(h => !h.cancel && h.p3a != null).sort((a, c) => (c.p3a - a.p3a) || a.num - c.num).map((h, i) =>
-        `<p><b>${i + 1}位 ${h.num} ${esc(h.name)}</b> 3着内 ${Math.round(h.p3a * 100)}%<br>${whyHtml(h.why || {}) || "<span class=\"why\">目立つ理由なし</span>"}</p>`).join("")}</details>` : ""}
+    ${race.horses.some(h => h.why || h.f) ? `<details class="note story"><summary>全頭の勝てる理由・負ける理由（印の順）</summary>${race.horses.filter(h => !h.cancel)
+        .sort((a, c) => ((mk.indexOf(a.num) + 1 || 99) - (mk.indexOf(c.num) + 1 || 99)) || a.num - c.num).map(h => horseStory(race, h, pop)).join("")}</details>` : ""}
   </div>
   ${factorPanel(race, pop)}
   <div class="panel builder">
