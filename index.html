@@ -135,6 +135,23 @@ button { min-height: 40px; }
 .wp { color: var(--fg); margin-right: 4px; }
 .ana { color: var(--accent); }
 .why { display: block; font-size: .8rem; line-height: 1.5; }
+.juni { border-color: var(--accent); border-width: 2px; }
+.juni h2 small { font-weight: 400; margin-left: .4rem; }
+.juni h3 { font-size: .92rem; margin: 2px 0 0; color: var(--muted); font-weight: 700; }
+.jc { margin: 0; padding: 8px 10px 8px 1.6em; background: var(--soft); border-radius: 8px; font-size: .88rem; }
+.jc li { margin: 2px 0; }
+.jare { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; font-size: .8rem; }
+.jare b { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.jb { display: block; height: 6px; background: var(--soft); border-radius: 99px; overflow: hidden; margin: 3px 0 2px; }
+.jb span { display: block; height: 100%; background: var(--muted); border-radius: 99px; }
+.jb .fl { background: var(--accent); } .jb .ro { background: var(--rough); }
+.jfs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.jf { background: var(--soft); border-radius: 8px; padding: 6px 8px; font-size: .82rem; min-width: 0; border: 2px solid transparent; }
+.jf.on { border-color: var(--accent); }
+.jf ol { margin: 2px 0 0; padding-left: 1.3em; }
+.jf li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jl { font-size: .84rem; line-height: 1.6; margin: 0; }
+@media (max-width: 460px) { .jfs { grid-template-columns: 1fr; } .jf li { white-space: normal; } }
 .why b { display: inline-block; width: 1.3em; }
 .story .why b { width: auto; margin-right: .3em; }
 .story .hs { margin: 0; padding: 8px 0; border-top: 1px solid var(--line); line-height: 1.5; }
@@ -461,6 +478,7 @@ function quickFill(race, what) {
   const b = S.b; const pop = popOrder(race); const mk = race.mark || pop;
   if (what === "ana") { const an = anaList(race, pop).map(x => x.num); if (b.way === "box") b.box = [...new Set([...b.box, ...an])]; else { const i = needOf(b.kind) - 1; b.cols[i] = [...new Set([...b.cols[i], ...an])]; } return; }
   if (what === "jusho3t" || what === "jusho3f") { const j = jushoShape(race, what === "jusho3t" ? "3連単" : "3連複"); if (!j) return; b.kind = j.b.kind; b.way = "form"; b.cols = j.b.cols.map(c => [...c]); b.box = []; return; }
+  if (what === "juni") { const k = juniKaime(race); if (!k) return; b.kind = "3連複"; b.way = "form"; b.cols = k.map(c => [...c]); b.box = []; return; }
   if (what !== "keshi") b.kind = "3連複";
   if (what === "kaikata") { const k = kaikataShape(race); if (!k) return; b.way = k.way; b.box = k.box; b.cols = k.cols; }
   if (what === "mark6") { b.way = "box"; b.box = mk.slice(0, 6); }
@@ -747,6 +765,71 @@ function horseStory(race, h, pop) {
   return `<p class="hs"><b>${head}</b> <small>${nums}</small>
     ${line("ana", "勝てる理由", x.kachi, "目立つ物なし")}${line("", "入るかもしれない", x.maybe, "")}${line("leak", "負ける理由", x.dame, "目立つ物なし")}</p>`;
 }
+// ---- 昼の見直し（本人 2026-11-14「12時に天候・馬場・クッション値・含水率を含めて出し直し、ペースや展開なども含めてアプリに見やすく」） ----
+// データは PC の juni.py → data/<日付>/juni.json → app_data.py が race.juni（レースごと）と S.data.juni（場ごとの天候・馬場、まとめ）に載せる
+const FLN = ["前残り", "平均", "差し"];
+function jpc(p) { return p == null ? "—" : Math.round(p * 100) + "%"; }
+function paceShort(j) { return j && j.pace ? j.pace.split("（")[0] : ""; }
+// 買い方の形: 1頭目 人気1〜3／2頭目 1〜6／3頭目 7〜12（過去の確かめで、1日2Rに絞った時に一番良かった形。回収 83〜92%）。人気は押した時の人気
+function juniKaime(race) { const pop = popOrder(race); return pop.length >= 12 ? [pop.slice(0, 3), pop.slice(0, 6), pop.slice(6, 12)] : null; }
+function juniBaba(pl, surf) {
+  if (!pl) return "";
+  const dv = (a, u) => a == null ? "まだ出ていない" : `${a}${u != null ? `（ふだん ${u}、${a - u >= 0 ? "+" : ""}${(a - u).toFixed(1)}）` : ""}`;
+  const out = [`天候 ${esc(pl.weather || "—")}・馬場 ${esc(pl.going || "—")}${pl.wind ? "・" + esc(pl.wind) : ""}`];
+  if (surf === "芝") out.push(`クッション値 ${dv(pl.cushion, pl.cushion_usual)}`);
+  out.push(`${surf}の含水率 ${dv(surf === "芝" ? pl.turf : pl.dirt, surf === "芝" ? pl.turf_usual : pl.dirt_usual)}`);
+  const b = pl.bias && pl.bias[surf];
+  out.push(b ? `今日の${surf}（${b.n}R）は ${esc(b.words)}` : `今日の${surf}の傾向はまだ無し`);
+  return out.join("<br>");
+}
+function juniPanel(race) {
+  const j = race.juni; if (!j) return "";
+  const J = S.data.juni || {}; const pl = J.places ? J.places[race.place] : null;
+  const nm = n => { const h = race.horses.find(x => x.num === n); return h ? esc(h.name) : ""; };
+  const mkOf = n => { const i = (race.mark || []).indexOf(n); return i >= 0 && i < 6 ? MK[i] : ""; };
+  const a = j.are || {};
+  const bar = (p, c) => `<span class="jb"><span class="${c}" style="width:${Math.round((p || 0) * 100)}%"></span></span>`;
+  const best = j.flow ? j.flow.indexOf(Math.max(...j.flow)) : -1;
+  const flows = j.top ? FLN.map((t, k) => `<div class="jf${k === best ? " on" : ""}"><b>${t}なら</b> <small>起きやすさ ${jpc(j.flow[k])}${j.flow_asa && Math.abs(j.flow_asa[k] - j.flow[k]) >= 0.01 ? `（朝 ${jpc(j.flow_asa[k])}）` : ""}</small>${bar(j.flow[k], "fl")}
+      <ol>${j.top[k].map(([n, w]) => `<li>${mkOf(n)}${chipNum(n, race.heads)} ${nm(n)} <small>${jpc(w)}</small></li>`).join("")}</ol></div>`).join("") : "";
+  const swap = j.top && j.top[0][0][0] !== j.top[2][0][0] ? `前残りなら ${j.top[0][0][0]} ${nm(j.top[0][0][0])}、差しなら ${j.top[2][0][0]} ${nm(j.top[2][0][0])} が1位で、流れで勝ち馬が入れ替わります。` : j.top ? `どの流れでも ${j.top[0][0][0]} ${nm(j.top[0][0][0])} が1位です。` : "";
+  const row = (lab, arr) => arr && arr.length ? `<span class="l2"><span class="fxl">${lab}</span>${arr.map((n, i) => `<span class="mkn">${MK[i]}${chipNum(n, race.heads)}</span>`).join("")}</span>` : "";
+  const same = j.mark_now && j.mark_asa && j.mark_now.slice(0, 3).join() === j.mark_asa.slice(0, 3).join();
+  const mvw = m => m == null ? "" : m <= 0.9 ? `<b class="ana">売れた</b>` : m > 1.1 ? `<b class="leak">売れていない</b>` : "ほぼ同じ";
+  const kc = juniKaime(race); const kb = kc ? { kind: "3連複", way: "form", cols: kc, box: [] } : null; const kn = kb ? combosOf(kb).length : 0;
+  const tg = (j.tags || []).filter(t => t[1] === "危"), nr = (j.tags || []).filter(t => t[1] === "狙");
+  return `<div class="panel juni"><h2>${esc(J.time || "12時")} の見直し <small class="note">天候・馬場込みで出し直し</small></h2>
+    ${j.comment && j.comment.length ? `<ul class="jc">${j.comment.map(s => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}
+    <h3>荒れ度（三連複1万円以上になる確率）</h3>
+    <div class="jare"><span>朝（オッズなし）<br><b>${jpc(a.asa)}</b>${bar(a.asa, "")}</span><span>馬場を入れて<br><b>${jpc(a.baba)}</b>${bar(a.baba, "")}</span><span>${esc(J.time || "")}のオッズで<br><b>${jpc(a.now)}</b>${bar(a.now, "ro")}</span></div>
+    <p class="note">今のオッズを入れた％は、朝のオッズほど荒れる側に出やすいので、少し割り引いて見てください。</p>
+    <h3>天候・馬場</h3><p class="jl">${juniBaba(pl, race.surf)}</p>
+    <h3>ペースと展開</h3>
+    <p class="jl">ペースは<b>${esc(j.pace || "—")}</b>。先行馬 ${j.front ?? "—"}頭、逃げ候補 ${(j.leaders || []).map(([n, l]) => `${n} ${nm(n)}（${jpc(l)}）`).join("・")}。${esc(swap)}</p>
+    <div class="jfs">${flows}</div>
+    <p class="note">数字はその流れになった時の勝率（展開シミュ、オッズなし）。枠の太い所が一番起きやすい流れですが、どれも 50% 未満なので決め打ちはしないでください。</p>
+    <h3>印（朝 → 馬場込みの当日）</h3>
+    ${row("朝", j.mark_asa)}${row("当日", j.mark_now)}
+    <p class="note">${same ? "上位3頭は朝と同じです。" : "上位が朝と入れ替わっています。"}当日の印＝総合（強さ・脚質・距離・騎手・血統・コース）に馬場を入れた順で、オッズ・人気は入れていません。${j.gone && j.gone.length ? ` 取消・除外 ${j.gone.join("・")}。` : ""}</p>
+    <h3>穴候補・人気ほど評価が高くない馬</h3>
+    <p class="jl">${(j.ana || []).length ? j.ana.map(x => `<b class="ana">${mkOf(x.num)}${x.num} ${nm(x.num)}</b> ${x.pop}番人気・展開${x.rank}位（3着内 ${jpc(x.s3)}・${x.best}向き）朝${x.asa}倍→${x.now}倍 ${mvw(x.mv)}`).join("<br>") : "今の7番人気以下に、展開6位以内の馬はいません。"}
+    ${nr.length ? `<br><b class="ana">狙い</b> ${nr.map(t => `${t[0]} ${nm(t[0])}（${t[2]}番人気）`).join("・")}` : ""}
+    ${(j.weak || []).length ? `<br><b class="leak">評価が人気ほど高くない</b> ${j.weak.map(x => `${x.num} ${nm(x.num)}（${x.pop}番人気・展開${x.rank}位/${x.of}頭）`).join("・")}` : ""}
+    ${tg.length ? `<br><b class="leak">危ない人気馬</b> ${tg.map(t => `${t[0]} ${nm(t[0])}（${t[2]}番人気）`).join("・")}` : ""}</p>
+    <p class="note">穴候補＝今の7番人気以下で、展開の3着内率がメンバーの6位以内。過去の確かめでは、7番人気以下で展開1〜3位の馬は3着内 16.5%（7番人気以下の全体 8.5%）。朝から売れた人気薄は 20〜26%、売れていない馬は 4〜5%（4日分だけ）。</p>
+    ${kb ? `<h3>買い方の形</h3><div class="shape">${shapeHtml(kb)}</div><p class="note"><b>${kn}点 ${yen(kn * 100)}</b>　1頭目 人気1〜3／2頭目 1〜6／3頭目 7〜12（${race.now ? esc(race.odds_time.slice(11, 16)) + "の" : "朝の"}人気）。過去の確かめで、荒れ度の高い2Rに絞った時に一番良かった形（回収 83〜92%、100% は超えていない）。</p>
+    <div class="quick"><button data-q="juni" class="primary">この形を買い目に入れる</button></div>` : ""}
+    <details class="cl"><summary>クッション値・含水率・天候の扱い</summary><p class="note">荒れ度には馬場（稍重・重・不良）だけを入れています。クッション値・含水率・天候は、過去（2025年〜、3,218R）で荒れ度に足すと見分ける力がかえって下がった（0.721→0.714）ので、表示だけです。重・不良の日は、実際の1万円以上が 41〜42% で、計算の 37% より少し多めでした。印でも、馬場の材料を足して当たり方はほぼ変わりませんでした。今日の前・後ろの傾向は後のレースにほとんど続かず、内・外は少し続きます。</p></details>
+  </div>`;
+}
+function juniSummary(rs) {
+  const J = S.data.juni; if (!J) return "";
+  const t = rs.filter(r => r.juni && r.juni.target);
+  return `<div class="panel juni"><h2>${esc(J.time || "12時")} の見直し <small class="note">天候・馬場込みで出し直し</small></h2>
+    ${J.summary && J.summary.length ? `<ul class="jc">${J.summary.map(s => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}
+    ${t.length ? `<div class="quick">${t.map(r => `<button class="pickb" data-rid="${r.rid}"><b>${jpc(r.juni.are.asa)}→${jpc(r.juni.are.now)}</b> ${esc(r.place)}${r.r}R <small>${r.post}・ペース${esc(paceShort(r.juni))}</small></button>`).join("")}</div>` : ""}
+    <p class="note">${Object.entries(J.places || {}).map(([p, x]) => `${esc(p)} ${esc(x.weather || "—")}・${esc(x.going || "—")}`).join("　")}。レースを開くと一番上に、荒れ度の変化・ペースと流れ別の上位・印の変化・穴候補・買い方の形が出ます。</p></div>`;
+}
 function storyPanel(race, pop) {
   const mk = race.mark || []; if (!mk.length) return "";
   const x = raceReasons(race); const p = pOf(race);
@@ -848,6 +931,7 @@ function renderYoso() {
       <div class="seg" role="group" aria-label="並び"><button data-sort="time" aria-pressed="${sort === "time"}">発走順</button><button data-sort="p" aria-pressed="${sort === "p"}">荒れそうな順</button></div>` : ""}
       <div class="quick"><button id="kekkabtn" ${S.dbOk ? "" : "disabled"}>結果を取る</button><button data-yoso="now" ${S.dbOk ? "" : "disabled"}>今のオッズで出し直す</button></div>
       ${asaCtl()}
+      ${juniSummary(rs)}
       ${dayBets.length ? `<p class="mine ${dayRet ? "hit" : ""}">この日の記録 ${dayBets.length}件 ${yen(dayCost)}${settled.length ? `　結果が出た分 ${yen(settledCost)} → ${yen(dayRet)}` : ""}</p>` : ""}
       <details class="cl"><summary>数字の読み方</summary><p class="note">${esc(S.data.ds)}　${rs.length}R。${hasP ? "<b>左の大きい数字は、三連複が1万円以上になる確率（1勝クラス以上の平均 36%、過去では 60〜70% と出たレースの61%、70%以上の83%が実際に1万円以上）。</b>" : "荒れ度は、印とオッズのずれで決まるので、発走前のオッズで出し直したレース（「今」の付いたレース）にだけ出します。それまでは「待ち」です。"}作業1の買い目の人気順は朝のオッズなので、買う時の人気が変わっていたら合わせてください。${S.data.now_time ? `<b>「今」の付いたレースは ${esc(S.data.now_time.slice(11, 16))} 頃のオッズで印・荒れ方・作業1を出し直しています（荒れ方もオッズで判定）。</b>` : ""}${S.data.fixed ? "予想の固定 " + esc(S.data.fixed) : ""}</p></details>
     </div>
@@ -863,6 +947,7 @@ function renderYoso() {
         ${(() => { const x = raceReasons(r); const a = x.up.length >= x.down.length ? x.up : x.down; return a.length ? `<span class="sub ${a === x.up ? "leak" : ""}">${a === x.up ? "荒れる理由" : "堅い理由"}: ${esc(a.slice(0, 2).map(t => t.s).join("・"))}</span>` : ""; })()}
         ${r.mark ? `<span class="l2">${fixChanged(r) ? `<span class="fxl">今</span>` : ""}${r.mark.slice(0, 6).map((n, i) => `<span class="mkn">${MK[i]}${chipNum(n, r.heads)}</span>`).join("")}</span>` : ""}
         ${fixChanged(r) ? `<span class="l2 fx"><span class="fxl">${fixLab()}</span>${r.mark_fixed.slice(0, 6).map((n, i) => `<span class="mkn">${MK[i]}${chipNum(n, r.heads)}</span>`).join("")}</span>` : ""}
+        ${r.juni && r.juni.flow ? `<span class="sub"><b class="ana">${esc(S.data.juni && S.data.juni.time || "12時")}の見直し</b> ${jpc(r.juni.are.asa)}→${jpc(r.juni.are.now)}・ペース${esc(paceShort(r.juni))}・${FLN[r.juni.flow.indexOf(Math.max(...r.juni.flow))]} ${jpc(Math.max(...r.juni.flow))}</span>` : ""}
         ${anaList(r).length ? `<span class="sub"><b class="ana">穴候補 ${anaList(r).map(x => x.num).join("・")}</b></span>` : ""}
         ${keshiNums(r).length ? `<span class="sub">消し ${keshiNums(r).join("・")}</span>` : ""}
         ${r.now && r.horses.some(h => h.doro === "得") ? `<span class="sub"><b class="ana">道悪が得意 ${r.horses.filter(h => h.doro === "得" && !h.cancel).map(h => h.num).join("・")}</b></span>` : ""}
@@ -998,6 +1083,7 @@ function renderRace(v, race) {
     ${badBaba(race) ? `<p class="warn">${esc(badBaba(race))}</p>` : ""}
     ${S.kekkaMsg ? `<p class="note">${esc(S.kekkaMsg)}</p>` : ""}
   </div>
+  ${juniPanel(race)}
   ${storyPanel(race, pop)}
   ${jushoPanel(race)}
   ${recoPanel(race)}
