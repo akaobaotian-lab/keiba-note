@@ -145,6 +145,7 @@ button { min-height: 40px; }
 .jb { display: block; height: 6px; background: var(--soft); border-radius: 99px; overflow: hidden; margin: 3px 0 2px; }
 .jb span { display: block; height: 100%; background: var(--muted); border-radius: 99px; }
 .jb .fl { background: var(--accent); } .jb .ro { background: var(--rough); }
+.tan .tn { margin: 4px 0; line-height: 1.6; }
 .jfs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .jf { background: var(--soft); border-radius: 8px; padding: 6px 8px; font-size: .82rem; min-width: 0; border: 2px solid transparent; }
 .jf.on { border-color: var(--accent); }
@@ -479,6 +480,7 @@ function quickFill(race, what) {
   if (what === "ana") { const an = anaList(race, pop).map(x => x.num); if (b.way === "box") b.box = [...new Set([...b.box, ...an])]; else { const i = needOf(b.kind) - 1; b.cols[i] = [...new Set([...b.cols[i], ...an])]; } return; }
   if (what === "jusho3t" || what === "jusho3f") { const j = jushoShape(race, what === "jusho3t" ? "3連単" : "3連複"); if (!j) return; b.kind = j.b.kind; b.way = "form"; b.cols = j.b.cols.map(c => [...c]); b.box = []; return; }
   if (what === "juni") { const k = juniKaime(race); if (!k) return; b.kind = "3連複"; b.way = "form"; b.cols = k.map(c => [...c]); b.box = []; return; }
+  if (what === "tan") { const t = tanNerai(race).map(x => x.h.num); if (!t.length) return; b.kind = "単勝"; b.way = "form"; b.cols = [t, [], []]; b.box = []; return; }
   if (what !== "keshi") b.kind = "3連複";
   if (what === "kaikata") { const k = kaikataShape(race); if (!k) return; b.way = k.way; b.box = k.box; b.cols = k.cols; }
   if (what === "mark6") { b.way = "box"; b.box = mk.slice(0, 6); }
@@ -822,6 +824,58 @@ function juniPanel(race) {
     <details class="cl"><summary>クッション値・含水率・天候の扱い</summary><p class="note">荒れ度には馬場（稍重・重・不良）だけを入れています。クッション値・含水率・天候は、過去（2025年〜、3,218R）で荒れ度に足すと見分ける力がかえって下がった（0.721→0.714）ので、表示だけです。重・不良の日は、実際の1万円以上が 41〜42% で、計算の 37% より少し多めでした。印でも、馬場の材料を足して当たり方はほぼ変わりませんでした。今日の前・後ろの傾向は後のレースにほとんど続かず、内・外は少し続きます。</p></details>
   </div>`;
 }
+// ---- 単勝の狙い（本人 2026-11-14「三連複の形は 90% 止まりで買う意味がない」→「アプリに出して」） ----
+// 今の7〜9番人気で、強さ か 総合（どちらもオッズ・人気なしの印）がメンバー内3位以内の馬の単勝。
+// 確かめ（2025-07〜2026-10、モデルにとって初見の627頭。人気は確定オッズの順）: 勝率 6%・単勝の回収 141%（四半期 98〜221%）。
+// 大きい払戻の上位5つを除くと 93%。30〜40頭続けて外れるのは普通
+const TAN_NOTE = "今の7〜9番人気で、強さか総合の印（オッズ・人気なし）がメンバー内3位以内の馬。過去の確かめ（2025-07〜2026-10、初見の627頭）で勝率 6%・単勝の回収 141%。ただし大きい払戻に頼っていて（上位5つを除くと 93%）、30〜40頭続けて外れることも普通にあります。人気は買う時に変わるので、発走前の人気で選び直してください。";
+function tanNerai(race) {
+  const pop = popOrder(race);
+  return race.horses.filter(h => !h.cancel && h.f && (h.f.強さ <= 3 || h.f.総合 <= 3))
+    .map(h => ({ h, p: pop.indexOf(h.num) + 1 })).filter(x => x.p >= 7 && x.p <= 9).sort((a, c) => a.p - c.p);
+}
+function tanPay(race, num) {   // 単勝の払戻（100円あたり）。1着でなければ 0
+  const res = race.result; if (!res || res.rank[num] !== 1) return 0;
+  const t = ((res.pay && res.pay.Tansho) || []).find(x => x[0].includes(num));
+  return t ? t[1] : Math.round((res.odds[num] || 0) * 100);
+}
+function tanPanel(race) {
+  const t = tanNerai(race); const res = race.result;
+  if (!race.horses.some(h => h.f)) return "";
+  return `<div class="panel tan"><h2>単勝の狙い <small class="note">7〜9番人気で強さか総合が3位以内</small></h2>
+    ${t.length ? t.map(x => { const od = res ? res.odds[x.h.num] : x.h.odds; const rk = res ? res.rank[x.h.num] : null; const y = tanPay(race, x.h.num);
+      return `<p class="tn"><b class="ana">${x.h.num} ${esc(x.h.name)}</b> ${x.p}番人気・${od ?? "-"}倍・強さ${x.h.f.強さ}位・総合${x.h.f.総合}位${rk ? `・<b class="${y ? "res1" : ""}">${rk}着${y ? " 単勝 " + yen(y) : ""}</b>` : ""}</p>`; }).join("")
+      + (res ? "" : `<div class="quick"><button data-q="tan" class="primary">単勝を買い目に入れる（${t.length}点 ${yen(t.length * 100)}）</button></div>`)
+      : `<p class="note">${res ? "確定の" : "今の"}7〜9番人気に、強さか総合が3位以内の馬はいません。</p>`}
+    <details class="cl"><summary>この狙いについて</summary><p class="note">${TAN_NOTE}</p></details></div>`;
+}
+function tanSummary(rs) {
+  if (!rs.some(r => r.horses.some(h => h.f))) return "";
+  const up = rs.filter(r => !r.result && tanNerai(r).length); const dn = rs.filter(r => r.result && tanNerai(r).length);
+  const n = dn.reduce((s, r) => s + tanNerai(r).length, 0); const y = dn.reduce((s, r) => s + tanNerai(r).reduce((t, x) => t + tanPay(r, x.h.num), 0), 0);
+  return `<div class="row"><span class="lab">単勝の狙い（7〜9番人気で強さか総合が3位以内）</span>
+    ${up.length ? `<div class="quick">${up.map(r => `<button class="pickb" data-rid="${r.rid}">${esc(r.place)}${r.r}R <small>${r.post}</small> <b>${tanNerai(r).map(x => `${x.h.num}（${x.p}人気）`).join("・")}</b></button>`).join("")}</div>` : `<span class="note">これから走るレースにはいません。</span>`}
+    ${n ? `<p class="note">終わったレースで100円ずつ買っていたら: ${n}頭 ${yen(n * 100)} → <b class="${y ? "res1" : ""}">${yen(y)}</b></p>` : ""}</div>`;
+}
+function tanRecord() {   // 読み込んだ日のうち結果のあるレースで、狙いを100円ずつ買っていたら
+  const days = Object.keys(S.cache).filter(ds => S.cache[ds]).sort(); const rows = []; let n = 0, y = 0, w = 0;
+  for (const ds of days) for (const r of S.cache[ds].races) {
+    if (!r.result) continue;
+    for (const x of tanNerai(r)) { const p = tanPay(r, x.h.num); n++; y += p; if (p) { w++; rows.push(`<tr><td>${esc(ds)}</td><td>${esc(r.place)}${r.r}R</td><td>${x.h.num} ${esc(x.h.name)}</td><td class="r">${x.p}</td><td class="r res1">${yen(p)}</td></tr>`); } }
+  }
+  const all = (S.days || []).every(ds => ds in S.cache);
+  return `<div class="panel tan"><h2>単勝の狙い（100円ずつ買っていたら）</h2>
+    <dl class="kpi"><div class="me"><dt>単勝の回収</dt><dd>${pct(y, n * 100)}<small>${n}頭 ${yen(n * 100)} → ${yen(y)}・勝ち ${w}頭</small></dd></div></dl>
+    <p class="note">数えたのは ${all ? "全部の日" : "読み込んだ日だけ"}（${days.length}日）。人気は確定オッズの順。過去の確かめは 141%（627頭）で、差がはっきりするには数百頭要ります。</p>
+    ${all ? "" : `<div class="quick"><button id="tanall">全部の日を読んで数える</button><span class="status" id="tanmsg"></span></div>`}
+    ${rows.length ? `<div class="tw"><table><thead><tr><th>日付</th><th>R</th><th>勝った馬</th><th class="r">人気</th><th class="r">単勝</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>` : ""}</div>`;
+}
+function bindTanAll(v) {
+  const b = v.querySelector("#tanall"); if (!b) return;
+  b.onclick = async () => { b.disabled = true; const m = v.querySelector("#tanmsg"); let i = 0;
+    for (const ds of S.days || []) { if (m) m.textContent = `読んでいます ${++i}/${S.days.length}`; await getDay(ds); }
+    render(); };
+}
 function juniSummary(rs) {
   const J = S.data.juni; if (!J) return "";
   const t = rs.filter(r => r.juni && r.juni.target);
@@ -930,6 +984,7 @@ function renderYoso() {
         ${picks.length ? `<div class="quick">${picks.map(r => `<button class="pickb" data-rid="${r.rid}"><b>${Math.round(pOf(r) * 100)}%</b> ${esc(r.place)}${r.r}R <small>${r.post}</small></button>`).join("")}</div>` : `<span class="note">いまは 60%以上のレースがありません。</span>`}</div>
       <div class="seg" role="group" aria-label="並び"><button data-sort="time" aria-pressed="${sort === "time"}">発走順</button><button data-sort="p" aria-pressed="${sort === "p"}">荒れそうな順</button></div>` : ""}
       <div class="quick"><button id="kekkabtn" ${S.dbOk ? "" : "disabled"}>結果を取る</button><button data-yoso="now" ${S.dbOk ? "" : "disabled"}>今のオッズで出し直す</button></div>
+      ${tanSummary(rs)}
       ${asaCtl()}
       ${juniSummary(rs)}
       ${dayBets.length ? `<p class="mine ${dayRet ? "hit" : ""}">この日の記録 ${dayBets.length}件 ${yen(dayCost)}${settled.length ? `　結果が出た分 ${yen(settledCost)} → ${yen(dayRet)}` : ""}</p>` : ""}
@@ -948,6 +1003,7 @@ function renderYoso() {
         ${r.mark ? `<span class="l2">${fixChanged(r) ? `<span class="fxl">今</span>` : ""}${r.mark.slice(0, 6).map((n, i) => `<span class="mkn">${MK[i]}${chipNum(n, r.heads)}</span>`).join("")}</span>` : ""}
         ${fixChanged(r) ? `<span class="l2 fx"><span class="fxl">${fixLab()}</span>${r.mark_fixed.slice(0, 6).map((n, i) => `<span class="mkn">${MK[i]}${chipNum(n, r.heads)}</span>`).join("")}</span>` : ""}
         ${r.juni && r.juni.flow ? `<span class="sub"><b class="ana">${esc(S.data.juni && S.data.juni.time || "12時")}の見直し</b> ${jpc(r.juni.are.asa)}→${jpc(r.juni.are.now)}・ペース${esc(paceShort(r.juni))}・${FLN[r.juni.flow.indexOf(Math.max(...r.juni.flow))]} ${jpc(Math.max(...r.juni.flow))}</span>` : ""}
+        ${tanNerai(r).length ? `<span class="sub"><b class="ana">単勝の狙い ${tanNerai(r).map(x => `${x.h.num}（${x.p}人気）`).join("・")}</b>${r.result ? (y => ` → <b class="${y ? "res1" : ""}">${yen(y)}</b>`)(tanNerai(r).reduce((s, x) => s + tanPay(r, x.h.num), 0)) : ""}</span>` : ""}
         ${anaList(r).length ? `<span class="sub"><b class="ana">穴候補 ${anaList(r).map(x => x.num).join("・")}</b></span>` : ""}
         ${keshiNums(r).length ? `<span class="sub">消し ${keshiNums(r).join("・")}</span>` : ""}
         ${r.now && r.horses.some(h => h.doro === "得") ? `<span class="sub"><b class="ana">道悪が得意 ${r.horses.filter(h => h.doro === "得" && !h.cancel).map(h => h.num).join("・")}</b></span>` : ""}
@@ -1083,6 +1139,7 @@ function renderRace(v, race) {
     ${badBaba(race) ? `<p class="warn">${esc(badBaba(race))}</p>` : ""}
     ${S.kekkaMsg ? `<p class="note">${esc(S.kekkaMsg)}</p>` : ""}
   </div>
+  ${tanPanel(race)}
   ${juniPanel(race)}
   ${storyPanel(race, pop)}
   ${jushoPanel(race)}
@@ -1266,7 +1323,7 @@ function renderPaste() {
 function renderSeiseki() {
   const v = $("v-seiseki");
   if (!S.dbOk) { v.innerHTML = `<p class="empty">記録の置き場所につながっていないので、成績を出せません。設定・QR で鍵を入れてください。</p>`; return; }
-  if (!S.bets.length) { v.innerHTML = `<p class="empty">まだ記録がありません。予想タブでレースを開いて買い目を記録するか、貼り付けタブで購入履歴を貼ってください。</p>`; return; }
+  if (!S.bets.length) { v.innerHTML = tanRecord() + `<p class="empty">まだ記録がありません。予想タブでレースを開いて買い目を記録するか、貼り付けタブで購入履歴を貼ってください。</p>`; bindTanAll(v); return; }
   const groups = new Map();
   for (const b of S.bets) { const k = b.ds + "|" + b.race; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(b); }
   const T = { n: 0, buy: 0, ret: 0, c3: 0, r3: 0, pop: 0, mark: 0, markC: 0, markMe: 0, model: 0, modelC: 0, modelMe: 0, kC: 0, kR: 0, pi: 0, p3: 0, m3: 0, nm: 0, pim: 0, wait: 0 };
@@ -1289,7 +1346,7 @@ function renderSeiseki() {
       <td>${race.result.top3.join("-")}（${race.result.top3.map(n => race.result.ninki[n]).join("-")}）</td>
       <td>${c ? c.picks.join(" ") + "（" + c.picksIn + "頭）" : "-"}</td><td class="r">${c ? yen(c.pop) : "-"}</td><td class="r">${c && c.mark !== null ? yen(c.mark) : "-"}</td></tr>`);
   }
-  v.innerHTML = `<div class="panel">
+  v.innerHTML = tanRecord() + `<div class="panel">
     <h2>通算</h2>
     <dl class="kpi">
       <div class="me"><dt>本人（全券種）</dt><dd>${pct(T.ret, T.buy)}<small>${yen(T.buy)} → ${yen(T.ret)}・${T.n}R</small></dd></div>
@@ -1303,6 +1360,7 @@ function renderSeiseki() {
   </div>
   <div class="panel"><h2>レースごと</h2><div class="tw"><table><thead><tr><th>日付</th><th>R</th><th class="r">購入</th><th class="r">払戻</th><th>1-2-3着（人気）</th><th>選んだ3頭</th><th class="r">人気版</th><th class="r">印版</th></tr></thead>
     <tbody>${rows.join("")}</tbody></table></div></div>`;
+  bindTanAll(v);
 }
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
