@@ -839,36 +839,34 @@ function evCalc(race) {
   const hon = xs.reduce((a, b) => b.q > a.q ? b : a);
   return { xs, hon, picks: xs.filter(x => x.ev >= EV_T && x.q >= EV_PMIN).sort((a, b) => b.ev - a.ev) };
 }
-// ---- ステップ制（本人 2026-11-16「すこしシステムを作り直そう」） ----
-// 1 単勝・複勝で当てる感覚 → 2 ワイド・馬連で回収率 → 3 馬単・3連複で予想力 → 4 3連単。1戦＝1レース、的中＝その券種のどれかが当たったレース。
+// ---- ステップ制（本人 2026-11-16「すこしシステムを作り直そう」→ 同日「これからは的中率じゃなく回収率で考えよう」） ----
+// 1 単勝・複勝 → 2 ワイド・馬連 → 3 馬単・3連複 → 4 3連単。1戦＝1レース。クリアは戦数と回収率だけ（的中率は参考に見せるだけ）。
 // 自分の記録（STEP_FROM から、その段の券種を買ったレース）でクリアを数え、今のステップを決める。アプリの案の成績も横に並べる（本人の選択「両方を並べる」）。
-// 参加するのは期待値1.5以上の穴がいるレースだけ（いなければ見送り）。案は本命を軸に、相手は勝つ確率の上位と期待値の高い穴。
-// 確かめ（2025-07〜2026-10、7R以降の参加 106R、確定オッズ）: 1 複勝 本命＋単勝 穴 的中 75%・回収 171%（上位3払戻を除くと 105%）・10戦でクリア 55%／
-// 2 馬連 本命-穴3 24%・159%（101%）・18%／3 3連複 本命-上位2+穴1 21%・145%（70%）・14%／4 3連単 本命1・2着→上位2+穴1 19%・204%（53%）・20戦で 21%。
-// 2〜4 の回収は大きい払戻の数本で決まるので、クリアは運の分が大きい（形はたくさん試した中の上の物）。
+// 参加するのは期待値1.5以上の馬がいるレースだけ（いなければ見送り）。案は各段の券種で回収率が一番高かった形（過去の参加 106R、確定オッズ）:
+// 1 単勝 期待値1.5以上の馬 247%（上位3払戻を除くと 123%）／2 馬連 本命－穴3頭 159%（101%）／3 馬単 穴3頭→本命 336%（172%）／
+// 4 3連単 穴3頭→本命→勝つ確率の2〜5位 351%（135%）。形はたくさん試した中の上の物なので、前向きの記録で確かめる。
 const STEP_FROM = "2026-11-16";
 const STEPS = [
-  { n: 1, name: "単勝・複勝", kinds: ["単勝", "複勝"], hit: 1 / 3, roi: 1.0, min: 10, goal: "当てる感覚を知る", plan: "本命の複勝＋期待値1.5以上の穴の単勝" },
-  { n: 2, name: "ワイド・馬連", kinds: ["ワイド", "馬連"], hit: 1 / 4, roi: 2.5, min: 10, goal: "軸を決めて回収率を高める", plan: "馬連 本命－期待値の高い穴3頭" },
-  { n: 3, name: "馬単・3連複", kinds: ["馬単", "3連複"], hit: 1 / 5, roi: 3.0, min: 10, goal: "予想力を身につける", plan: "3連複 本命－（勝つ確率の2・3位＋期待値の高い穴1頭）" },
-  { n: 4, name: "3連単", kinds: ["3連単"], hit: 0, roi: 4.0, min: 20, goal: "高額払い戻しをつかむ", plan: "3連単 本命1着・2着 → 勝つ確率の2・3位＋期待値の高い穴1頭" },
+  { n: 1, name: "単勝・複勝", kinds: ["単勝", "複勝"], roi: 1.0, min: 10, goal: "当てる感覚を知る", plan: "単勝 期待値1.5以上の馬" },
+  { n: 2, name: "ワイド・馬連", kinds: ["ワイド", "馬連"], roi: 2.5, min: 10, goal: "軸を決めて回収率を高める", plan: "馬連 本命－期待値の高い穴3頭" },
+  { n: 3, name: "馬単・3連複", kinds: ["馬単", "3連複"], roi: 3.0, min: 10, goal: "予想力を身につける", plan: "馬単 期待値の高い穴3頭 → 本命（穴が勝ち、本命が2着）" },
+  { n: 4, name: "3連単", kinds: ["3連単"], roi: 4.0, min: 20, goal: "高額払い戻しをつかむ", plan: "3連単 期待値の高い穴3頭 → 本命 → 勝つ確率の2〜5位" },
 ];
-const STEP_BT = { 1: "的中 75%・回収 171%（大きい払戻の上位3つを除くと 105%）・10戦でクリアできる見込み 55%",
-  2: "的中 24%・回収 159%（上位3つを除くと 101%）・10戦でクリア 18%",
-  3: "的中 21%・回収 145%（上位3つを除くと 70%）・10戦でクリア 14%",
-  4: "的中 19%・回収 204%（上位3つを除くと 53%）・20戦でクリア 21%" };
+const STEP_BT = { 1: "回収 247%（前半 159%・後半 296%、大きい払戻の上位3つを除くと 123%）・1戦 1.1点",
+  2: "回収 159%（228%・120%、上位3つを除くと 101%）・1戦 3点",
+  3: "回収 336%（437%・280%、上位3つを除くと 172%）・1戦 3点",
+  4: "回収 351%（369%・341%、上位3つを除くと 135%）・1戦 約11点" };
 function stepPlan(race, n) {   // その段の案。go＝参加（期待値1.5以上の馬がいる）
   const e = evCalc(race); if (!e) return null;
   const order = [...e.xs].sort((a, b) => b.q - a.q).map(x => x.h.num); const hon = order[0];
   const ana = e.xs.filter(x => x.h.num !== hon && x.q >= EV_PMIN).sort((a, b) => b.ev - a.ev).map(x => x.h.num).slice(0, 3);
   const evh = e.picks.map(x => x.h.num); const go = evh.length > 0;
-  const P = [...order.slice(1, 3)]; const a1 = ana.find(x => !P.includes(x)); if (a1 != null) P.push(a1);
-  const T = n === 1 ? [{ kind: "複勝", cols: [[hon]], lab: "複勝 本命" }, { kind: "単勝", cols: [evh], lab: "単勝 期待値1.5以上の穴" }]
+  const T = n === 1 ? [{ kind: "単勝", cols: [evh], lab: "単勝 期待値1.5以上" }]
     : n === 2 ? [{ kind: "馬連", cols: [[hon], ana], lab: "馬連 本命－穴" }]
-    : n === 3 ? [{ kind: "3連複", cols: [[hon], P, P], lab: "3連複 本命－相手" }]
-    : [{ kind: "3連単", cols: [[hon], P, P], lab: "3連単 本命1着" }, { kind: "3連単", cols: [P, [hon], P], lab: "3連単 本命2着" }];
+    : n === 3 ? [{ kind: "馬単", cols: [ana, [hon]], lab: "馬単 穴→本命" }]
+    : [{ kind: "3連単", cols: [ana, [hon], order.slice(1, 5)], lab: "3連単 穴→本命→2〜5位" }]   // 3着は勝つ確率の上位5頭（本命は2着なので2〜5位の4頭）;
   for (const t of T) { t.combos = t.cols.every(c => c.length) ? combosOf({ kind: t.kind, way: "form", cols: [...t.cols, [], [], []].slice(0, 3), box: [] }) : []; }
-  return { e, go, hon, ana, evh, P, T: T.filter(t => t.combos.length) };
+  return { e, go, hon, ana, evh, T: T.filter(t => t.combos.length) };
 }
 function colTxt(t) {   // 順番のある券種は →、無い券種は －（同じ列は1つにまとめる）
   if (t.kind === "馬単" || t.kind === "3連単") return t.cols.map(c => c.join("・")).join(" → ");
@@ -878,7 +876,7 @@ function planRet(race, pl) { return pl.T.reduce((s, t) => s + t.combos.reduce((u
 function planCost(pl) { return pl.T.reduce((s, t) => s + t.combos.length * 100, 0); }
 function stepStat(list, st) {   // list: [{cost, ret}]（1戦ずつ）
   const n = list.length, h = list.filter(x => x.ret > 0).length, c = list.reduce((s, x) => s + x.cost, 0), r = list.reduce((s, x) => s + x.ret, 0);
-  const ok = n >= st.min && h / Math.max(1, n) >= st.hit && c > 0 && r / c > st.roi;
+  const ok = n >= st.min && c > 0 && r / c > st.roi;   // 的中率は条件に入れない（本人 2026-11-16）
   return { n, h, c, r, ok };
 }
 function myStepStats() {   // 自分の記録。STEP_FROM からの、その段の券種を買ったレース
@@ -930,7 +928,7 @@ function tanPanel(race) {   // レース画面の一番上: 参加／見送り�
     ${e.picks.length ? `<p class="tn"><b class="ana">期待値の高い穴</b> ${pl.ana.map(m => `${m}（${xs[m].p}番人気・期待値 ${xs[m].ev.toFixed(2)}${res && res.rank[m] ? "・" + res.rank[m] + "着" : ""}）`).join("・")}</p>
       ${seg}<p class="note">ステップ${n} ${esc(st.name)}（${esc(st.goal)}）: ${esc(st.plan)}</p>${tk}`
       : `<p class="note">期待値1.5以上の馬がいないので、このレースは見送り。${near.length ? "次に高い馬: " + near.map(x => `${x.h.num}（${x.p}番人気・期待値 ${x.ev.toFixed(2)}）`).join("・") : ""}</p>`}
-    <details class="cl"><summary>期待値・参加・ステップの案の決め方</summary><p class="note">${TAN_NOTE}</p><p class="note">ステップの案（過去の参加レース 106R で確かめ）:<br>${STEPS.map(s => `${s.n}. ${esc(s.plan)} — ${STEP_BT[s.n]}`).join("<br>")}<br>2〜4 は大きい払戻の数本で回収が決まるので、クリアは運の分が大きいです。</p></details></div>`;
+    <details class="cl"><summary>期待値・参加・ステップの案の決め方</summary><p class="note">${TAN_NOTE}</p><p class="note">ステップの案（回収率で選んだ形）:<br>${STEPS.map(s => `${s.n}. ${esc(s.plan)} — ${STEP_BT[s.n]}`).join("<br>")}<br>どれも過去の参加レース 106R で、その券種の形をいくつも試して回収率が一番高かった物です。大きい払戻の数本で回収が大きく動くので、前向きの記録で確かめます。</p></details></div>`;
 }
 function tanSummary(rs) {
   if (!rs.some(r => evCalc(r))) return "";
@@ -943,20 +941,20 @@ function tanSummary(rs) {
   return `<div class="row"><span class="lab">今日の参加レース（ステップ${cs} ${esc(st.name)}の案）</span>
     ${up.length ? `<div class="quick">${up.map(r => `<button class="pickb" data-rid="${r.rid}">${esc(r.place)}${r.r}R <small>${r.post}</small> <b>${esc(short(r))}</b></button>`).join("")}</div>`
       : `<span class="note">${!dn.length ? "<b>今日は勝負しない日</b>（" + (left ? "今のオッズでは" : "") + "期待値1.5以上の馬がいない）。" : "これから走るレースにはいません。"}${left ? "オッズが動くと変わります。" : ""}</span>`}
-    ${P.length ? `<p class="note">終わった参加レースで案どおり買っていたら: ${P.length}戦 ${h}的中・${yen(c)} → <b class="${y ? "res1" : ""}">${yen(y)}</b></p>` : ""}</div>`;
+    ${P.length ? `<p class="note">終わった参加レースで案どおり買っていたら: ${P.length}戦・<b class="${y > c ? "res1" : ""}">回収 ${pct(y, c)}</b>（${yen(c)} → ${yen(y)}）</p>` : ""}</div>`;
 }
 function tanRecord() {   // 成績の一番上: ステップの進み具合（自分の記録／アプリの案）
   const all = (S.days || []).every(ds => ds in S.cache);
   const m = S.dbOk ? myStepStats() : null; const a = appStepStats(); const cs = curStep();
-  const cell = (x, st) => x.n ? `${x.n}戦・的中 ${pct(x.h, x.n)}・回収 ${pct(x.r, x.c)}` : "まだなし";
-  const need = (x, st) => x.ok ? `<b class="res1">クリア</b>` : [x.n < st.min ? `あと${st.min - x.n}戦` : "", st.hit && x.h / Math.max(1, x.n) < st.hit ? `的中 ${Math.round(st.hit * 100)}%まで` : "", !(x.c && x.r / x.c > st.roi) ? `回収 ${Math.round(st.roi * 100)}%超えまで` : ""].filter(Boolean).join("・");
+  const cell = (x, st) => x.n ? `${x.n}戦・<b>回収 ${pct(x.r, x.c)}</b>（${yen(x.c)} → ${yen(x.r)}・的中 ${pct(x.h, x.n)}）` : "まだなし";
+  const need = (x, st) => x.ok ? `<b class="res1">クリア</b>` : [x.n < st.min ? `あと${st.min - x.n}戦` : "", !(x.c && x.r / x.c > st.roi) ? `回収 ${Math.round(st.roi * 100)}%超えまで` : ""].filter(Boolean).join("・");
   return `<div class="panel tan"><h2>ステップの進み具合 <small class="note">今はステップ${cs}</small></h2>
     <div class="tw"><table><thead><tr><th>ステップ</th><th>クリア条件</th><th>自分の記録（${esc(STEP_FROM)}〜）</th><th>アプリの案（100円ずつ）</th></tr></thead><tbody>
-    ${STEPS.map(st => `<tr${st.n === cs ? ` style="font-weight:700"` : ""}><td>${st.n === cs ? "▶" : ""}${st.n} ${esc(st.name)}</td><td>${st.hit ? `的中 ${Math.round(st.hit * 100)}%以上・` : ""}${st.min}戦以上・回収 ${Math.round(st.roi * 100)}%超え</td>
+    ${STEPS.map(st => `<tr${st.n === cs ? ` style="font-weight:700"` : ""}><td>${st.n === cs ? "▶" : ""}${st.n} ${esc(st.name)}</td><td>${st.min}戦以上・回収 ${Math.round(st.roi * 100)}%超え</td>
       <td>${m ? `${cell(m[st.n], st)}${m[st.n].wait ? `（結果待ち ${m[st.n].wait}戦）` : ""}<br><small>${need(m[st.n], st)}</small>` : "記録の置き場所につながっていません"}</td>
       <td>${cell(a[st.n], st)}<br><small>${need(a[st.n], st)}</small></td></tr>`).join("")}
     </tbody></table></div>
-    <p class="note">1戦＝1レース。的中＝そのステップの券種のどれかが当たったレース。自分の記録は、予想タブで記録した買い目と貼り付けた購入履歴のうち、そのステップの券種の物。今のステップは、自分の記録でまだクリアしていない一番下の段です。アプリの案は、参加レース（期待値1.5以上の馬がいるレース）で案どおり100円ずつ買っていたらの数字（期待値は確定オッズ、数えたのは ${all ? "全部の日" : "読み込んだ日だけ"}・期待値を出せるのは 2026-11-07 から）。勝負しない日 ${a.skip}日（期待値を出せた ${a.days}日のうち）。</p>
+    <p class="note">1戦＝1レース。クリアは戦数と回収率だけで決めます（的中率は参考）。自分の記録は、予想タブで記録した買い目と貼り付けた購入履歴のうち、そのステップの券種の物。今のステップは、自分の記録でまだクリアしていない一番下の段です。アプリの案は、参加レース（期待値1.5以上の馬がいるレース）で案どおり100円ずつ買っていたらの数字（期待値は確定オッズ、数えたのは ${all ? "全部の日" : "読み込んだ日だけ"}・期待値を出せるのは 2026-11-07 から）。勝負しない日 ${a.skip}日（期待値を出せた ${a.days}日のうち）。</p>
     ${all ? "" : `<div class="quick"><button id="tanall">全部の日を読んで数える</button><span class="status" id="tanmsg"></span></div>`}</div>`;
 }
 function bindTanAll(v) {
