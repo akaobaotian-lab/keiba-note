@@ -627,7 +627,8 @@ function areText(race) {
 // 消し: 7番人気以下で、理由の印の点数（良い印の数−悪い印の数）が−3以下の馬。過去の確かめ（2025-01〜2026-10、1勝クラス以上・10頭以上）で3着内 2.9%・複勝回収 43%（7番人気以下の全体は 8.7%・69%）
 function keshiNums(race, pop) {
   pop = pop || popOrder(race);
-  return race.horses.filter(h => !h.cancel && h.cnt != null && h.cnt <= -3 && pop.indexOf(h.num) + 1 >= 7).map(h => h.num).sort((a, b) => a - b);
+  const gk = race.r >= 7 ? gapKeshi(race) : [];   // 強い断層（2.5倍以上）の直下も消し（本人 2026-11-16）
+  return race.horses.filter(h => !h.cancel && ((h.cnt != null && h.cnt <= -3 && pop.indexOf(h.num) + 1 >= 7) || gk.includes(h.num))).map(h => h.num).sort((a, b) => a - b);
 }
 // 朝からの売れ方: 今（結果が出た後は確定）の単勝 ÷ 朝の単勝。0.9以下＝売れた、1.1超＝売れていない。朝のオッズしか無い間は null
 function oddsMove(race, h) {
@@ -837,7 +838,8 @@ function evCalc(race) {
   const pop = popOrder(race);
   const xs = hs.map((h, i) => ({ h, p: pop.indexOf(h.num) + 1, q: z[i] / zs, od: od(h), ev: z[i] / zs * od(h) }));
   const hon = xs.reduce((a, b) => b.q > a.q ? b : a);
-  return { xs, hon, picks: xs.filter(x => x.ev >= EV_T && x.q >= EV_PMIN).sort((a, b) => b.ev - a.ev) };
+  const gk = gapKeshi(race);
+  return { xs, hon, gk, picks: xs.filter(x => x.ev >= EV_T && x.q >= EV_PMIN && !gk.includes(x.h.num)).sort((a, b) => b.ev - a.ev) };
 }
 // ---- ステップ制（本人 2026-11-16「すこしシステムを作り直そう」→ 同日「これからは的中率じゃなく回収率で考えよう」） ----
 // 1 単勝・複勝 → 2 ワイド・馬連 → 3 馬単・3連複 → 4 3連単。1戦＝1レース。クリアは戦数と回収率だけ（的中率は参考に見せるだけ）。
@@ -852,14 +854,14 @@ const STEPS = [
   { n: 3, name: "馬単・3連複", kinds: ["馬単", "3連複"], roi: 3.0, min: 10, goal: "予想力を身につける", plan: "馬単 期待値の高い穴3頭 → 本命（穴が勝ち、本命が2着）" },
   { n: 4, name: "3連単", kinds: ["3連単"], roi: 4.0, min: 20, goal: "高額払い戻しをつかむ", plan: "3連単 期待値の高い穴3頭 → 本命 → 勝つ確率の2〜5位" },
 ];
-const STEP_BT = { 1: "回収 247%（前半 159%・後半 296%、大きい払戻の上位3つを除くと 123%）・1戦 1.1点",
-  2: "回収 159%（228%・120%、上位3つを除くと 101%）・1戦 3点",
-  3: "回収 336%（437%・280%、上位3つを除くと 172%）・1戦 3点",
-  4: "回収 351%（369%・341%、上位3つを除くと 135%）・1戦 約11点" };
+const STEP_BT = { 1: "回収 271%（前半 176%・後半 323%、大きい払戻の上位3つを除くと 134%）・1戦 約1点",
+  2: "回収 160%（225%・124%、上位3つを除くと 98%）・1戦 3点",
+  3: "回収 358%（456%・303%、上位3つを除くと 180%）・1戦 3点",
+  4: "回収 382%（406%・369%、上位3つを除くと 150%）・1戦 約11点" };   // 断層の直下を消した後（参加 98R）
 function stepPlan(race, n) {   // その段の案。go＝参加（期待値1.5以上の馬がいる）
   const e = evCalc(race); if (!e) return null;
   const order = [...e.xs].sort((a, b) => b.q - a.q).map(x => x.h.num); const hon = order[0];
-  const ana = e.xs.filter(x => x.h.num !== hon && x.q >= EV_PMIN).sort((a, b) => b.ev - a.ev).map(x => x.h.num).slice(0, 3);
+  const ana = e.xs.filter(x => x.h.num !== hon && x.q >= EV_PMIN && !e.gk.includes(x.h.num)).sort((a, b) => b.ev - a.ev).map(x => x.h.num).slice(0, 3);
   const evh = e.picks.map(x => x.h.num); const go = evh.length > 0;
   const T = n === 1 ? [{ kind: "単勝", cols: [evh], lab: "単勝 期待値1.5以上" }]
     : n === 2 ? [{ kind: "馬連", cols: [[hon], ana], lab: "馬連 本命－穴" }]
@@ -921,6 +923,8 @@ function gapsOf(race) {
   for (let i = 0; i < Math.min(6, pop.length - 1); i++) { const a = od(pop[i]), b = od(pop[i + 1]); if (a && b && b / a >= 2.0) out.push({ k: i + 1, r: b / a, up: pop[i], dn: pop[i + 1] }); }
   return out;
 }
+// 消しに使う（本人 2026-11-16「消しに使えるのはいいな」）: 2.5倍以上の断層の直下の馬（2〜7番人気）。参加の判定・穴・消しの全部から外す
+function gapKeshi(race) { return gapsOf(race).filter(g => g.r >= 2.5).map(g => g.dn); }
 const gapLab = r => r >= 3 ? "評価が大きく分かれる" : r >= 2.5 ? "強い断層" : "断層";
 const evTxt = x => `勝つ確率 ${(x.q * 100).toFixed(x.q < 0.1 ? 1 : 0)}%・${x.od}倍 → 期待値 <b>${x.ev.toFixed(2)}</b>`;
 function tanPanel(race) {   // レース画面の一番上: 参加／見送り、本命、今のステップの案
@@ -939,7 +943,7 @@ function tanPanel(race) {   // レース画面の一番上: 参加／見送り�
     ${e.picks.length ? `<p class="tn"><b class="ana">期待値の高い穴</b> ${pl.ana.map(m => `${m}（${xs[m].p}番人気・期待値 ${xs[m].ev.toFixed(2)}${gapsOf(race).some(g => g.dn === m && g.r >= 2.5) ? "・断層の直下" : ""}${res && res.rank[m] ? "・" + res.rank[m] + "着" : ""}）`).join("・")}</p>
       ${seg}<p class="note">ステップ${n} ${esc(st.name)}（${esc(st.goal)}）: ${esc(st.plan)}</p>${tk}`
       : `<p class="note">期待値1.5以上の馬がいないので、このレースは見送り。${near.length ? "次に高い馬: " + near.map(x => `${x.h.num}（${x.p}番人気・期待値 ${x.ev.toFixed(2)}）`).join("・") : ""}</p>`}
-    <details class="cl"><summary>期待値・参加・ステップの案の決め方</summary><p class="note">${TAN_NOTE}</p><p class="note">ステップの案（回収率で選んだ形）:<br>${STEPS.map(s => `${s.n}. ${esc(s.plan)} — ${STEP_BT[s.n]}`).join("<br>")}<br>オッズの断層は、検討する馬を絞る目安として出すだけで、案は変えません。過去（2023年〜）では、断層 2.5倍以上の直下の馬は毎年 単勝 67〜74%・複勝 73〜79% と、ふつうの馬（77〜83%・78〜80%）より悪い（消し候補）。ただ、今の案から直下の馬を外しても回収はほとんど変わりませんでした。<br>どれも過去の参加レース 106R で、その券種の形をいくつも試して回収率が一番高かった物です。大きい払戻の数本で回収が大きく動くので、前向きの記録で確かめます。</p></details></div>`;
+    <details class="cl"><summary>期待値・参加・ステップの案の決め方</summary><p class="note">${TAN_NOTE}</p><p class="note">ステップの案（回収率で選んだ形。強い断層の直下の馬は消してから、過去の参加 98R）:<br>${STEPS.map(s => `${s.n}. ${esc(s.plan)} — ${STEP_BT[s.n]}`).join("<br>")}<br>オッズの断層は、検討する馬を絞る目安として出すだけで、案は変えません。過去（2023年〜）では、断層 2.5倍以上の直下の馬は毎年 単勝 67〜74%・複勝 73〜79% と、ふつうの馬（77〜83%・78〜80%）より悪い（消し候補）。なので、強い断層（2.5倍以上）の直下の馬は消しにして、参加の判定と穴から外しています（外すと過去の回収は少し上がった）。<br>どれも過去の参加レース 106R で、その券種の形をいくつも試して回収率が一番高かった物です。大きい払戻の数本で回収が大きく動くので、前向きの記録で確かめます。</p></details></div>`;
 }
 function tanSummary(rs) {
   if (!rs.some(r => evCalc(r))) return "";
@@ -1243,7 +1247,7 @@ function renderRace(v, race) {
   ${jushoPanel(race)}
   ${recoPanel(race)}
   <div class="panel">
-    ${ks.length ? `<p class="note"><b class="leak">消し ${ks.join("・")}</b>（7番人気以下で悪い印が重なった馬）</p>` : ""}
+    ${ks.length ? `<p class="note"><b class="leak">消し ${ks.join("・")}</b>（7番人気以下で悪い印が重なった馬と、2.5倍以上のオッズの断層の直下の馬）</p>` : ""}
     ${race.flow ? `<p class="note">展開の見込み（オッズ無し）: 前残り ${Math.round(race.flow[0] * 100)}%／平均 ${Math.round(race.flow[1] * 100)}%／差し ${Math.round(race.flow[2] * 100)}%。逃げそうな馬 ${race.horses.filter(h => !h.cancel && h.ld != null).sort((a, c) => c.ld - a.ld).slice(0, 2).map(h => `${h.num}（${Math.round(h.ld * 100)}%）`).join("・")}</p>` : ""}
     ${an.length && (an[0].mode === "now" || an[0].mode === "data") ? `<div class="note"><b class="ana">穴候補</b>（${an[0].mode === "now" ? "今の7番人気以下を、データの評価（人気・オッズなし）＋前走の内容の順に" : "人気・オッズを使わずに選んだ見直せる馬。データの評価4〜9位で、前走の内容が着順より良い馬"}）${an.map(x =>
         `<p><b class="ana">${x.num} ${esc(x.name)}</b> ${x.pop ? x.pop + "番人気・" : ""}データ${x.rank}位（3着内 ${Math.round(x.p3a * 100)}%）<br>${whyHtml(x.why)}</p>`).join("")}</div>`
