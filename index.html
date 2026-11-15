@@ -912,6 +912,16 @@ function tanPay(race, num) {   // 単勝の払戻（100円あたり）。1着で
   const t = ((res.pay && res.pay.Tansho) || []).find(x => x[0].includes(num));
   return t ? t[1] : Math.round((res.odds[num] || 0) * 100);
 }
+// オッズの断層（本人 2026-11-16）: 人気順の単勝オッズで、下位÷上位 が 2.0倍以上の所（1〜7番人気の間）。検討する馬を絞る目安で、買い目は変えない。
+// 確かめ（2023-01〜2026-11 の全レース、確定オッズ）: 断層 2.5倍以上の直下の馬（2〜7番人気）は、毎年 単勝 67〜74%・複勝 73〜79%（直下でない馬は 77〜83%・78〜80%）。
+// 直上の馬は同じ人気のふつうの馬より3着内が多い（4番人気・2.5倍以上で単勝 100%）。今の案から直下の馬を外しても回収はほぼ変わらない（期待値で選ぶと直下の馬はもともと少ない）
+function gapsOf(race) {
+  const res = race.result; const od = n => { const h = race.horses.find(x => x.num === n); return res ? res.odds[n] : h && h.odds; };
+  const pop = popOrder(race); const out = [];
+  for (let i = 0; i < Math.min(6, pop.length - 1); i++) { const a = od(pop[i]), b = od(pop[i + 1]); if (a && b && b / a >= 2.0) out.push({ k: i + 1, r: b / a, up: pop[i], dn: pop[i + 1] }); }
+  return out;
+}
+const gapLab = r => r >= 3 ? "評価が大きく分かれる" : r >= 2.5 ? "強い断層" : "断層";
 const evTxt = x => `勝つ確率 ${(x.q * 100).toFixed(x.q < 0.1 ? 1 : 0)}%・${x.od}倍 → 期待値 <b>${x.ev.toFixed(2)}</b>`;
 function tanPanel(race) {   // レース画面の一番上: 参加／見送り、本命、今のステップの案
   const e = evCalc(race); if (!e) return "";
@@ -925,10 +935,11 @@ function tanPanel(race) {   // レース画面の一番上: 参加／見送り�
         + (res ? "" : `<div class="quick"><button data-q="step:${n}:${i}" class="${i ? "" : "primary"}">${esc(t.lab)}を買い目に入れる</button></div>`); }).join("") : "";
   return `<div class="panel tan"><h2>${e.picks.length ? `<b class="ana">参加</b>` : "見送り"} <small class="note">期待値1.5以上の馬がいるレースだけ（${res ? "確定" : "今"}のオッズ）</small></h2>
     <p class="tn"><b>本命 ${H.h.num} ${esc(H.h.name)}</b> ${H.p}番人気・${evTxt(H)}（${H.ev >= 1 ? "割に合う" : "割に合わない"}）${rkTxt(H)}${H.p === 1 ? `<br><small class="note">1番人気なので勝ち馬にはせず、2着の軸に使う（本人 2026-11-16。1着で買う形は過去 47〜70%、2着に置く形は 159〜351%）</small>` : ""}</p>
-    ${e.picks.length ? `<p class="tn"><b class="ana">期待値の高い穴</b> ${pl.ana.map(m => `${m}（${xs[m].p}番人気・期待値 ${xs[m].ev.toFixed(2)}${res && res.rank[m] ? "・" + res.rank[m] + "着" : ""}）`).join("・")}</p>
+    ${(g => `<p class="tn"><b>オッズの断層</b> ${g.length ? g.map(x => `${x.k}→${x.k + 1}番人気 ${x.r.toFixed(1)}倍（${gapLab(x.r)}・直上 ${x.up}・直下 ${x.dn}）`).join("、") : "なし（1〜7番人気の間に2倍以上の開きが無い）"}</p>`)(gapsOf(race))}
+    ${e.picks.length ? `<p class="tn"><b class="ana">期待値の高い穴</b> ${pl.ana.map(m => `${m}（${xs[m].p}番人気・期待値 ${xs[m].ev.toFixed(2)}${gapsOf(race).some(g => g.dn === m && g.r >= 2.5) ? "・断層の直下" : ""}${res && res.rank[m] ? "・" + res.rank[m] + "着" : ""}）`).join("・")}</p>
       ${seg}<p class="note">ステップ${n} ${esc(st.name)}（${esc(st.goal)}）: ${esc(st.plan)}</p>${tk}`
       : `<p class="note">期待値1.5以上の馬がいないので、このレースは見送り。${near.length ? "次に高い馬: " + near.map(x => `${x.h.num}（${x.p}番人気・期待値 ${x.ev.toFixed(2)}）`).join("・") : ""}</p>`}
-    <details class="cl"><summary>期待値・参加・ステップの案の決め方</summary><p class="note">${TAN_NOTE}</p><p class="note">ステップの案（回収率で選んだ形）:<br>${STEPS.map(s => `${s.n}. ${esc(s.plan)} — ${STEP_BT[s.n]}`).join("<br>")}<br>どれも過去の参加レース 106R で、その券種の形をいくつも試して回収率が一番高かった物です。大きい払戻の数本で回収が大きく動くので、前向きの記録で確かめます。</p></details></div>`;
+    <details class="cl"><summary>期待値・参加・ステップの案の決め方</summary><p class="note">${TAN_NOTE}</p><p class="note">ステップの案（回収率で選んだ形）:<br>${STEPS.map(s => `${s.n}. ${esc(s.plan)} — ${STEP_BT[s.n]}`).join("<br>")}<br>オッズの断層は、検討する馬を絞る目安として出すだけで、案は変えません。過去（2023年〜）では、断層 2.5倍以上の直下の馬は毎年 単勝 67〜74%・複勝 73〜79% と、ふつうの馬（77〜83%・78〜80%）より悪い（消し候補）。ただ、今の案から直下の馬を外しても回収はほとんど変わりませんでした。<br>どれも過去の参加レース 106R で、その券種の形をいくつも試して回収率が一番高かった物です。大きい払戻の数本で回収が大きく動くので、前向きの記録で確かめます。</p></details></div>`;
 }
 function tanSummary(rs) {
   if (!rs.some(r => evCalc(r))) return "";
