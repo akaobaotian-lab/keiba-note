@@ -924,7 +924,7 @@ function tanPanel(race) {   // レース画面の一番上: 参加／見送り�
       return `<p class="tn"><b>${esc(t.lab)}</b> ${colTxt(t)}　${t.combos.length}点 ${yen(t.combos.length * 100)}${y != null ? `・<b class="${y ? "res1" : ""}">${y ? "払戻 " + yen(y) : "外れ"}</b>` : ""}</p>`
         + (res ? "" : `<div class="quick"><button data-q="step:${n}:${i}" class="${i ? "" : "primary"}">${esc(t.lab)}を買い目に入れる</button></div>`); }).join("") : "";
   return `<div class="panel tan"><h2>${e.picks.length ? `<b class="ana">参加</b>` : "見送り"} <small class="note">期待値1.5以上の馬がいるレースだけ（${res ? "確定" : "今"}のオッズ）</small></h2>
-    <p class="tn"><b>本命 ${H.h.num} ${esc(H.h.name)}</b> ${H.p}番人気・${evTxt(H)}（${H.ev >= 1 ? "割に合う" : "割に合わない"}）${rkTxt(H)}</p>
+    <p class="tn"><b>本命 ${H.h.num} ${esc(H.h.name)}</b> ${H.p}番人気・${evTxt(H)}（${H.ev >= 1 ? "割に合う" : "割に合わない"}）${rkTxt(H)}${H.p === 1 ? `<br><small class="note">1番人気なので勝ち馬にはせず、2着の軸に使う（本人 2026-11-16。1着で買う形は過去 47〜70%、2着に置く形は 159〜351%）</small>` : ""}</p>
     ${e.picks.length ? `<p class="tn"><b class="ana">期待値の高い穴</b> ${pl.ana.map(m => `${m}（${xs[m].p}番人気・期待値 ${xs[m].ev.toFixed(2)}${res && res.rank[m] ? "・" + res.rank[m] + "着" : ""}）`).join("・")}</p>
       ${seg}<p class="note">ステップ${n} ${esc(st.name)}（${esc(st.goal)}）: ${esc(st.plan)}</p>${tk}`
       : `<p class="note">期待値1.5以上の馬がいないので、このレースは見送り。${near.length ? "次に高い馬: " + near.map(x => `${x.h.num}（${x.p}番人気・期待値 ${x.ev.toFixed(2)}）`).join("・") : ""}</p>`}
