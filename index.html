@@ -925,6 +925,9 @@ function gapsOf(race) {
 }
 // 消しに使う（本人 2026-11-16「消しに使えるのはいいな」）: 2.5倍以上の断層の直下の馬（2〜7番人気）。参加の判定・穴・消しの全部から外す
 function gapKeshi(race) { return gapsOf(race).filter(g => g.r >= 2.5).map(g => g.dn); }
+// 軸馬の減点（本人 2026-11-21）: 効く3項目（6か月以上の休み明け・初ダート／初芝・馬体重 ±15kg以上）を1つ1点。h.gd は app_data.py が載せる（2022年からの成績で判定）
+const gdTxt = h => h.gd && h.gd.length ? `・<b class="leak">減点 ${h.gd.length}（${h.gd.map(esc).join("・")}）</b>` : "・減点なし";
+const GD_NOTE = "軸馬の減点は、効く3項目（6か月以上の休み明け・初ダート／初芝・馬体重 ±15kg以上）を1つ1点で数えています。過去（2023年〜）では、1〜4番人気にこれがあると3着内が 6〜11ポイント下がりました（1番人気なら 65% → 57〜59%）。ただ、その分はオッズに入っていて、軸を替えても回収はほとんど変わりませんでした。本命に減点がある時は、本命を軸にする券（ステップ2〜4）を見送る目安にしています（過去は7戦だけで、まだたまたまの範囲）。馬体重は当日の発表の後（昼の出し直し）から入ります。初ダート・初芝は 2022年からの成績で見ています。";
 const gapLab = r => r >= 3 ? "評価が大きく分かれる" : r >= 2.5 ? "強い断層" : "断層";
 const evTxt = x => `勝つ確率 ${(x.q * 100).toFixed(x.q < 0.1 ? 1 : 0)}%・${x.od}倍 → 期待値 <b>${x.ev.toFixed(2)}</b>`;
 function tanPanel(race) {   // レース画面の一番上: 参加／見送り、本命、今のステップの案
@@ -935,15 +938,17 @@ function tanPanel(race) {   // レース画面の一番上: 参加／見送り�
   const near = e.xs.filter(x => x !== H).sort((a, b) => b.ev - a.ev).slice(0, 3);
   const seg = `<div class="seg" role="group" aria-label="ステップ">${STEPS.map(s => `<button data-step="${s.n}" aria-pressed="${s.n === n}">${s.n === cs ? "▶" : ""}ステップ${s.n}</button>`).join("")}</div>`;
   const tk = pl && pl.go ? pl.T.map((t, i) => { const y = res ? t.combos.reduce((u, c) => u + (payOf(race, t.kind, c) || 0), 0) : null;
-      return `<p class="tn"><b>${esc(t.lab)}</b> ${colTxt(t)}　${t.combos.length}点 ${yen(t.combos.length * 100)}${y != null ? `・<b class="${y ? "res1" : ""}">${y ? "払戻 " + yen(y) : "外れ"}</b>` : ""}</p>`
+      return (n >= 2 && H.h.gd && H.h.gd.length && i === 0 ? `<p class="note"><b class="leak">本命に減点あり → この券は見送りの目安</b></p>` : "") + `<p class="tn"><b>${esc(t.lab)}</b> ${colTxt(t)}　${t.combos.length}点 ${yen(t.combos.length * 100)}${y != null ? `・<b class="${y ? "res1" : ""}">${y ? "払戻 " + yen(y) : "外れ"}</b>` : ""}</p>`
         + (res ? "" : `<div class="quick"><button data-q="step:${n}:${i}" class="${i ? "" : "primary"}">${esc(t.lab)}を買い目に入れる</button></div>`); }).join("") : "";
   return `<div class="panel tan"><h2>${e.picks.length ? `<b class="ana">参加</b>` : "見送り"} <small class="note">期待値1.5以上の馬がいるレースだけ（${res ? "確定" : "今"}のオッズ）</small></h2>
-    <p class="tn"><b>本命 ${H.h.num} ${esc(H.h.name)}</b> ${H.p}番人気・${evTxt(H)}（${H.ev >= 1 ? "割に合う" : "割に合わない"}）${rkTxt(H)}${H.p === 1 ? `<br><small class="note">1番人気なので勝ち馬にはせず、2着の軸に使う（本人 2026-11-16。1着で買う形は過去 47〜70%、2着に置く形は 159〜351%）</small>` : ""}</p>
+    <p class="tn"><b>本命 ${H.h.num} ${esc(H.h.name)}</b> ${H.p}番人気・${evTxt(H)}（${H.ev >= 1 ? "割に合う" : "割に合わない"}）${rkTxt(H)}${gdTxt(H.h)}${H.p === 1 ? `<br><small class="note">1番人気なので勝ち馬にはせず、2着の軸に使う（本人 2026-11-16。1着で買う形は過去 47〜70%、2着に置く形は 159〜351%）</small>` : ""}</p>
+    ${(() => { const nk = e.xs.filter(x => x.p >= 1 && x.p <= 4).sort((a, b) => a.p - b.p); const bad = nk.filter(x => x.h.gd && x.h.gd.length); const fav = nk[0]; const alt = nk.find(x => !(x.h.gd && x.h.gd.length));
+      return bad.length ? `<p class="tn"><b class="leak">減点のある人気馬</b> ${bad.map(x => `${x.h.num}（${x.p}番人気・${x.h.gd.map(esc).join("・")}）`).join("・")}${fav && fav.h.gd && fav.h.gd.length && alt ? `<br><small class="note">1番人気に減点あり。軸にするなら、減点の無い次の人気馬 ${alt.h.num}（${alt.p}番人気）</small>` : ""}</p>` : ""; })()}
     ${(g => `<p class="tn"><b>オッズの断層</b> ${g.length ? g.map(x => `${x.k}→${x.k + 1}番人気 ${x.r.toFixed(1)}倍（${gapLab(x.r)}・直上 ${x.up}・直下 ${x.dn}）`).join("、") : "なし（1〜7番人気の間に2倍以上の開きが無い）"}</p>`)(gapsOf(race))}
     ${e.picks.length ? `<p class="tn"><b class="ana">期待値の高い穴</b> ${pl.ana.map(m => `${m}（${xs[m].p}番人気・期待値 ${xs[m].ev.toFixed(2)}${gapsOf(race).some(g => g.dn === m && g.r >= 2.5) ? "・断層の直下" : ""}${res && res.rank[m] ? "・" + res.rank[m] + "着" : ""}）`).join("・")}</p>
       ${seg}<p class="note">ステップ${n} ${esc(st.name)}（${esc(st.goal)}）: ${esc(st.plan)}</p>${tk}`
       : `<p class="note">期待値1.5以上の馬がいないので、このレースは見送り。${near.length ? "次に高い馬: " + near.map(x => `${x.h.num}（${x.p}番人気・期待値 ${x.ev.toFixed(2)}）`).join("・") : ""}</p>`}
-    <details class="cl"><summary>期待値・参加・ステップの案の決め方</summary><p class="note">${TAN_NOTE}</p><p class="note">ステップの案（回収率で選んだ形。強い断層の直下の馬は消してから、過去の参加 98R）:<br>${STEPS.map(s => `${s.n}. ${esc(s.plan)} — ${STEP_BT[s.n]}`).join("<br>")}<br>オッズの断層は、検討する馬を絞る目安として出すだけで、案は変えません。過去（2023年〜）では、断層 2.5倍以上の直下の馬は毎年 単勝 67〜74%・複勝 73〜79% と、ふつうの馬（77〜83%・78〜80%）より悪い（消し候補）。なので、強い断層（2.5倍以上）の直下の馬は消しにして、参加の判定と穴から外しています（外すと過去の回収は少し上がった）。<br>どれも過去の参加レース 106R で、その券種の形をいくつも試して回収率が一番高かった物です。大きい払戻の数本で回収が大きく動くので、前向きの記録で確かめます。</p></details></div>`;
+    <details class="cl"><summary>期待値・参加・ステップの案の決め方</summary><p class="note">${TAN_NOTE}</p><p class="note">${GD_NOTE}</p><p class="note">ステップの案（回収率で選んだ形。強い断層の直下の馬は消してから、過去の参加 98R）:<br>${STEPS.map(s => `${s.n}. ${esc(s.plan)} — ${STEP_BT[s.n]}`).join("<br>")}<br>オッズの断層は、検討する馬を絞る目安として出すだけで、案は変えません。過去（2023年〜）では、断層 2.5倍以上の直下の馬は毎年 単勝 67〜74%・複勝 73〜79% と、ふつうの馬（77〜83%・78〜80%）より悪い（消し候補）。なので、強い断層（2.5倍以上）の直下の馬は消しにして、参加の判定と穴から外しています（外すと過去の回収は少し上がった）。<br>どれも過去の参加レース 106R で、その券種の形をいくつも試して回収率が一番高かった物です。大きい払戻の数本で回収が大きく動くので、前向きの記録で確かめます。</p></details></div>`;
 }
 function tanSummary(rs) {
   if (!rs.some(r => evCalc(r))) return "";
@@ -954,7 +959,7 @@ function tanSummary(rs) {
   const left = rs.some(r => !r.result);
   const short = r => { const pl = stepPlan(r, cs); return pl.T.map(t => `${t.kind} ${colTxt(t)}`).join("＋"); };
   return `<div class="row"><span class="lab">今日の参加レース（ステップ${cs} ${esc(st.name)}の案）</span>
-    ${up.length ? `<div class="quick">${up.map(r => `<button class="pickb" data-rid="${r.rid}">${esc(r.place)}${r.r}R <small>${r.post}</small> <b>${esc(short(r))}</b></button>`).join("")}</div>`
+    ${up.length ? `<div class="quick">${up.map(r => `<button class="pickb" data-rid="${r.rid}">${esc(r.place)}${r.r}R <small>${r.post}</small> <b>${esc(short(r))}</b>${(e => e && e.hon.h.gd && e.hon.h.gd.length ? ` <small>本命に減点</small>` : "")(evCalc(r))}</button>`).join("")}</div>`
       : `<span class="note">${!dn.length ? "<b>今日は勝負しない日</b>（" + (left ? "今のオッズでは" : "") + "期待値1.5以上の馬がいない）。" : "これから走るレースにはいません。"}${left ? "オッズが動くと変わります。" : ""}</span>`}
     ${P.length ? `<p class="note">終わった参加レースで案どおり買っていたら: ${P.length}戦・<b class="${y > c ? "res1" : ""}">回収 ${pct(y, c)}</b>（${yen(c)} → ${yen(y)}）</p>` : ""}</div>`;
 }
@@ -1105,6 +1110,7 @@ function renderYoso() {
         ${r.mark ? `<span class="l2">${fixChanged(r) ? `<span class="fxl">今</span>` : ""}${r.mark.slice(0, 6).map((n, i) => `<span class="mkn">${MK[i]}${chipNum(n, r.heads)}</span>`).join("")}</span>` : ""}
         ${fixChanged(r) ? `<span class="l2 fx"><span class="fxl">${fixLab()}</span>${r.mark_fixed.slice(0, 6).map((n, i) => `<span class="mkn">${MK[i]}${chipNum(n, r.heads)}</span>`).join("")}</span>` : ""}
         ${r.juni && r.juni.flow ? `<span class="sub"><b class="ana">${esc(S.data.juni && S.data.juni.time || "12時")}の見直し</b> ${jpc(r.juni.are.asa)}→${jpc(r.juni.are.now)}・ペース${esc(paceShort(r.juni))}・${FLN[r.juni.flow.indexOf(Math.max(...r.juni.flow))]} ${jpc(Math.max(...r.juni.flow))}</span>` : ""}
+        ${(e => e && e.hon.h.gd && e.hon.h.gd.length ? `<span class="sub"><b class="leak">本命 ${e.hon.h.num} に減点（${e.hon.h.gd.map(esc).join("・")}）</b></span>` : "")(evCalc(r))}
         ${tanNerai(r).length ? `<span class="sub"><b class="ana">参加 穴 ${tanNerai(r).map(x => `${x.h.num}（${x.p}人気・期待値${x.ev.toFixed(1)}）`).join("・")}</b>${r.result ? (y => ` → <b class="${y ? "res1" : ""}">${yen(y)}</b>`)(tanNerai(r).reduce((s, x) => s + tanPay(r, x.h.num), 0)) : ""}</span>` : ""}
         ${anaList(r).length ? `<span class="sub"><b class="ana">穴候補 ${anaList(r).map(x => x.num).join("・")}</b></span>` : ""}
         ${keshiNums(r).length ? `<span class="sub">消し ${keshiNums(r).join("・")}</span>` : ""}
