@@ -990,6 +990,35 @@ function osusumePanel(race) {
     ${o.go && !race.result ? `<div class="quick">${o.T.map((t, i) => `<button data-q="osu:${i}" class="${i ? "" : "primary"}">${esc(t.kind)}を買い目に入れる</button>`).join("")}</div>` : ""}
     <details class="cl"><summary>この買い方の決め方</summary><p class="note">${FIT_NOTE}</p></details></div>`;
 }
+// 馬ごとのくわしい情報（本人 2026-11-22「馬柱、馬の好馬体重、馬の走りのタイプ（瞬発型なのか耐久型なのか）、得意な脚質など」）。h.uma は umabashira.py → app_data.py
+// 確かめ（2025-07〜2026-11、8頭以上、kensho/uma_bt*.py）: どれも人気・オッズにほぼ入っていて、買い方は変えない（情報として出すだけ）
+const UMA_NOTE = "馬柱は近5走（2022年からの成績）。差＝勝ち馬との差（勝った時は2着との差でマイナス）、上がりの（ ）は上がり3Fの順位、体重の（ ）は前走からの増減。"
+  + "好走（3着以内か勝ち馬から0.3秒以内）した時の馬体重は、2回以上ある時だけ、真ん中と幅を出します。過去では、今回の体重が好走時の真ん中から4kg以内だと、1〜3番人気の3着内が 54% と、外れた時（51%）より少し高い程度で、回収は変わりませんでした。"
+  + "脚質は近10走の1コーナーの位置（逃げ＝1番手、先行＝前3分の1、差し＝真ん中、追込＝後ろ）。得意は、好走が一番多い脚質です。"
+  + "走りのタイプは、好走したレースの流れで決めます。流れは、前半（勝ち時計から勝ち馬の上がり3Fを引いた分）と上がり3Fの1mあたりの速さの比を、そのコース・馬場のふだんと比べた物です（速さそのものだとクラスが上ほど速く出るので比にしています）。好走がスローの上がり勝負に寄り、上がり3位以内が多い馬＝瞬発型、前半の速い流れ（消耗戦）に寄る馬＝持続型（耐久型）。"
+  + "過去では、持続型はスローのレースで3着内 24%、速いレースで 27% と流れで差が出ました（瞬発型は 30〜31% でほとんど変わらず）。レースの「流れの見込み」は、逃げが一番多い馬の頭数で出します（0頭のレースは実際にスローに寄りやすく、2頭以上は少し速い程度）。人気の帯ごとに比べると、タイプと流れの見込みの組み合わせで回収が安定して上がる所はありませんでした。";
+const bwgTxt = h => { const g = h.uma && h.uma.bwg; if (!g) return ""; const d = h.bw ? h.bw - g.med : null;
+  return `好走時の馬体重 ${g.med}kg（${g.lo === g.hi ? g.lo : g.lo + "〜" + g.hi}、${g.n}回）${d != null ? `・今日 ${h.bw}kg（${d > 0 ? "+" : ""}${d}）` : ""}`; };
+const umaShort = h => { const u = h.uma; if (!u) return ""; if (!u.n) return "過去の走りなし";
+  const s = u.style; return [u.type && u.type.lab !== "まだ分からない" ? u.type.lab : "", s ? s.main + (s.best && s.best !== s.main ? `（得意 ${s.best}）` : "") : ""].filter(Boolean).join("・"); };
+function paceGuess(race) {   // 流れの見込み: 逃げが一番多い馬の頭数（過去 0頭→前半 +0.19、2頭以上→ −0.34。＋＝ふだんより遅い）
+  const hs = race.horses.filter(h => !h.cancel && h.uma); if (hs.filter(h => h.uma.n).length < race.horses.filter(h => !h.cancel).length / 2) return null;
+  const ng = hs.filter(h => h.uma.style && h.uma.style.main === "逃げ").map(h => h.num);
+  return { ng, lab: ng.length === 0 ? "スローになりやすい" : ng.length >= 2 ? "速くなりやすい" : "ふつう" };
+}
+function umaPanel(race) {
+  const hs = race.horses.filter(h => !h.cancel && h.uma).sort((a, c) => a.num - c.num); if (!hs.length) return "";
+  const pg = paceGuess(race); const cnt = t => hs.filter(h => h.uma.type && h.uma.type.lab === t).map(h => h.num);
+  const rk = x => x.rk ? x.rk + "着" : (x.st || "—");
+  return `<div class="panel"><h2>馬柱と馬のタイプ <small class="note">近5走・好走時の馬体重・脚質・走りのタイプ</small></h2>
+    ${pg ? `<p class="tn"><b>流れの見込み: ${pg.lab}</b>（逃げが一番多い馬 ${pg.ng.length ? pg.ng.join("・") : "なし"}）　瞬発型 ${cnt("瞬発型").join("・") || "なし"}／持続型 ${cnt("持続型").join("・") || "なし"}</p>` : ""}
+    ${hs.map(h => { const u = h.uma; return `<details class="cl" style="min-width:0"><summary>${chipNum(h.num, race.heads)} <b>${esc(h.name)}</b> <small>${esc(umaShort(h))}</small></summary>
+      ${u.n ? `<p class="note">${u.type ? `<b>${esc(u.type.lab)}</b>（${esc(u.type.why)}）。` : ""}${u.style ? `脚質（近${u.style.n}走の1コーナー）: ${Object.entries(u.style.cnt).map(([k, v]) => `${k} ${v}回（好走 ${u.style.gd[k] || 0}）`).join("・")}。` : ""}${u.bwg ? esc(bwgTxt(h)) + "。" : "好走時の馬体重は、好走が2回以上ないので出していません。"}</p>
+      <div class="tw"><table><thead><tr><th>日付</th><th>レース</th><th>距離</th><th class="r">頭</th><th class="r">人</th><th class="r">着</th><th class="r">差</th><th>通過</th><th class="r">上がり</th><th class="r">体重</th><th>騎手</th></tr></thead><tbody>
+      ${u.runs.map(x => `<tr><td>${esc(x.d)}</td><td>${esc(x.pl)} ${esc(x.nm)}</td><td>${esc(x.sd)}${x.g ? esc(x.g) : ""}</td><td class="r">${x.hd}</td><td class="r">${x.pop ?? ""}</td><td class="r ${x.rk && x.rk <= 3 ? "res1" : ""}">${esc(rk(x))}</td><td class="r">${x.sa != null ? x.sa.toFixed(1) : ""}</td><td>${esc(x.ps)}</td><td class="r">${x.ag != null ? x.ag.toFixed(1) : ""}${x.agr ? `<small>(${x.agr})</small>` : ""}</td><td class="r">${x.bw ?? ""}${x.bwd != null ? `<small>(${x.bwd > 0 ? "+" : ""}${x.bwd})</small>` : ""}</td><td>${esc(x.jk || "")}</td></tr>`).join("")}
+      </tbody></table></div>` : `<p class="note">過去の走りが見つかりません（初出走か、2022年より前・海外だけの馬）。</p>`}</details>`; }).join("")}
+    <details class="cl"><summary>この情報の決め方</summary><p class="note">${UMA_NOTE}</p></details></div>`;
+}
 const gapLab = r => r >= 3 ? "評価が大きく分かれる" : r >= 2.5 ? "強い断層" : "断層";
 const evTxt = x => `勝つ確率 ${(x.q * 100).toFixed(x.q < 0.1 ? 1 : 0)}%・${x.od}倍 → 期待値 <b>${x.ev.toFixed(2)}</b>`;
 function tanPanel(race) {   // レース画面の一番上: 参加／見送り、本命、今のステップの案
@@ -1301,7 +1330,7 @@ function renderRace(v, race) {
     const mi = mk.indexOf(h.num); const rk = res ? res.rank[h.num] : null; const od = res ? res.odds[h.num] : h.odds; const pp = pop.indexOf(h.num) + 1;
     return `<div class="hr${rk && rk <= 3 ? " in" : ""}">${chipNum(h.num, race.heads)}
       <div class="hn"><span class="h1">${mi >= 0 && mi < 6 ? `<b class="mk">${MK[mi]}</b>` : mi >= 0 && hasP ? `<b class="mk rk">${mi + 1}</b>` : ""}${esc(h.name)}${ks.includes(h.num) ? `<b class="leak"> 消</b>` : ""}${an.some(x => x.num === h.num) ? `<b class="ana"> 穴</b>` : ""}</span>
-        <small>${(() => { const fi = fm.indexOf(h.num); return fm.length && fi !== mi && (fi >= 0 && fi < 6 || mi >= 0 && mi < 6) ? `<b class="fxm">${fixLab()}${fi >= 0 && fi < 6 ? MK[fi] : fi >= 0 ? fi + 1 : "-"}</b> ` : ""; })()}${hsort === "tenkai" && h.sw != null ? `<b class="wp">展開${tr(h.num)}位 ${pc1(h.sw)}</b> <span>前${Math.round(h.ws[0] * 100)}・平${Math.round(h.ws[1] * 100)}・差${Math.round(h.ws[2] * 100)}</span> ` : hsort === "model" && h.pm != null ? `<b class="wp">モデル${mr(h.num)}位 ${pc1(h.pm)}</b> ` : h.pb != null ? `<b class="wp">勝率 ${pc1(h.pb)}</b> ` : ""}<span>${pp ? pp + "番人気 " : ""}${od ?? "-"}倍</span> <span>${esc(h.jockey)}</span>${h.bw ? ` <span class="${h.bwx ? "leak" : ""}">${h.bw}kg(${h.bwd > 0 ? "+" : ""}${h.bwd})</span>` : ""}${hsort !== "tenkai" && h.sw != null ? ` <span>展開${tr(h.num)}位</span>` : ""}${(() => { const m = oddsMove(race, h); return m != null && mrk(h.num) >= 7 && (m <= 0.9 || m > 1.1) ? ` <span class="${m <= 0.9 ? "ana" : "leak"}">朝${h.om}倍→${m <= 0.9 ? "売れた" : "売れていない"}</span>` : ""; })()}${rk ? `・<b class="${rk <= 3 ? "res1" : ""}">${rk}着</b>` : ""}</small></div>
+        <small>${(() => { const fi = fm.indexOf(h.num); return fm.length && fi !== mi && (fi >= 0 && fi < 6 || mi >= 0 && mi < 6) ? `<b class="fxm">${fixLab()}${fi >= 0 && fi < 6 ? MK[fi] : fi >= 0 ? fi + 1 : "-"}</b> ` : ""; })()}${hsort === "tenkai" && h.sw != null ? `<b class="wp">展開${tr(h.num)}位 ${pc1(h.sw)}</b> <span>前${Math.round(h.ws[0] * 100)}・平${Math.round(h.ws[1] * 100)}・差${Math.round(h.ws[2] * 100)}</span> ` : hsort === "model" && h.pm != null ? `<b class="wp">モデル${mr(h.num)}位 ${pc1(h.pm)}</b> ` : h.pb != null ? `<b class="wp">勝率 ${pc1(h.pb)}</b> ` : ""}<span>${pp ? pp + "番人気 " : ""}${od ?? "-"}倍</span> <span>${esc(h.jockey)}</span>${h.uma && h.uma.n ? ` <span>${esc(umaShort(h))}</span>` : ""}${h.uma && h.uma.bwg && h.bw ? ` <span>好走時${h.uma.bwg.med}kg</span>` : ""}${h.bw ? ` <span class="${h.bwx ? "leak" : ""}">${h.bw}kg(${h.bwd > 0 ? "+" : ""}${h.bwd})</span>` : ""}${hsort !== "tenkai" && h.sw != null ? ` <span>展開${tr(h.num)}位</span>` : ""}${(() => { const m = oddsMove(race, h); return m != null && mrk(h.num) >= 7 && (m <= 0.9 || m > 1.1) ? ` <span class="${m <= 0.9 ? "ana" : "leak"}">朝${h.om}倍→${m <= 0.9 ? "売れた" : "売れていない"}</span>` : ""; })()}${rk ? `・<b class="${rk <= 3 ? "res1" : ""}">${rk}着</b>` : ""}</small></div>
       <div class="pks">${colIds.map(id => `<button class="pk" data-col="${id}" data-n="${h.num}" aria-pressed="${selOf(id).includes(h.num)}" aria-label="${h.num}番 ${esc(h.name)} ${colLab(id)}">${colIds.length === 1 ? "✓" : id + 1}</button>`).join("")}</div></div>`;
   }).join("");
   const mb = myBets(race);
@@ -1334,6 +1363,7 @@ function renderRace(v, race) {
         .sort((a, c) => ((mk.indexOf(a.num) + 1 || 99) - (mk.indexOf(c.num) + 1 || 99)) || a.num - c.num).map(h => horseStory(race, h, pop)).join("")}</details>` : ""}
   </div>
   ${factorPanel(race, pop)}
+  ${umaPanel(race)}
   <div class="panel builder">
     <h2>買い目をつくる</h2>
     <div class="seg" role="group" aria-label="券種">${["3連複", "3連単", "馬単", "馬連", "ワイド", "単勝", "複勝"].map(k => `<button data-kind="${k}" aria-pressed="${b.kind === k}">${k}</button>`).join("")}</div>
