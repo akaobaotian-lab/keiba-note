@@ -146,6 +146,9 @@ button { min-height: 40px; }
 .jb span { display: block; height: 100%; background: var(--muted); border-radius: 99px; }
 .jb .fl { background: var(--accent); } .jb .ro { background: var(--rough); }
 .tan .tn { margin: 4px 0; line-height: 1.6; }
+ul.kt { margin: 2px 0 8px; padding-left: 1.2em; line-height: 1.6; font-size: .9rem; }
+.ktr { border-top: 1px solid var(--line, #ddd); padding: 6px 0; min-width: 0; }
+.ktr p { margin: 2px 0; line-height: 1.6; }
 .jfs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .jf { background: var(--soft); border-radius: 8px; padding: 6px 8px; font-size: .82rem; min-width: 0; border: 2px solid transparent; }
 .jf.on { border-color: var(--accent); }
@@ -1019,6 +1022,66 @@ function umaPanel(race) {
       </tbody></table></div>` : `<p class="note">過去の走りが見つかりません（初出走か、2022年より前・海外だけの馬）。</p>`}</details>`; }).join("")}
     <details class="cl"><summary>この情報の決め方</summary><p class="note">${UMA_NOTE}</p></details></div>`;
 }
+// 予想の言語化（本人 2026-11-22「能力的に高いとか、能力は高いけどこのレースに向いているのか、内枠有利とか外枠有利のレースで不利な枠ではないか、消す理由、選ばない理由、
+//   全馬の選ぶ選ばない事のちゃんと納得できる言語化、予想のキモや核、オッズとの妙味」）。文は kotoba.py（オッズ無し）、妙味だけ今のオッズ（evCalc）で出す
+const KT_NOTE = "展開・能力・適性・枠の言葉は、どれもオッズと人気を見ずに作っています（要素ごとの印・展開シミュレーション・馬柱・コースの過去のレース）。"
+  + "能力＝要素ごとの印の「強さ」（過去のレースの内容）。適性＝距離・コース・今日の馬場の印。展開＝逃げる見込み・いつもの位置・走りのタイプと、流れの見込み。"
+  + "コースの傾向は 2022年からの同じコース（場・芝ダ・距離・内外回り）のレースです。確かめると、コースの「前が残るか差しが届くか」は年をまたいで続きましたが（相関 0.83）、「内枠有利・外枠有利」は年で入れ替わりやすく（0.39）、人気を除くと差が残りませんでした。なので枠は、差が大きい時だけ選ぶ理由に入れ、ほかは「枠」の欄に書くだけです。"
+  + "妙味は、今のオッズと見込みの勝率から出す期待値（1.5以上＝妙味あり、1.0〜1.5＝少し、1番〜3番人気で0.8未満＝人気しすぎ）。7R より前は期待値を確かめていないので、人気とオッズだけ出します。"
+  + "読みはレースの後に答え合わせします（逃げ・流れ・決まり手・位置・印の馬・見落とした馬）。当たり外れでなく、どの読みが合って、どの読みが外れたかを見るためです。";
+function myomi(race, h) {
+  const res = race.result; const od = res ? res.odds[h.num] : h.odds; const pop = res ? res.ninki[h.num] : h.ninki;
+  if (!od) return null;
+  const e = evCalc(race); const x = e && e.xs.find(x => x.h.num === h.num);
+  let lab = null, txt = `${pop}番人気・${od}倍`;
+  if (x) { lab = x.ev >= 1.5 ? "妙味あり" : x.ev >= 1.0 ? "妙味は少し" : pop <= 3 && x.ev < 0.8 ? "人気しすぎ" : "妙味なし";
+    txt += `・勝つ見込み ${(x.q * 100).toFixed(1)}%・期待値 ${x.ev.toFixed(2)}`; }
+  const k = h.kt; let gap = "";
+  if (k && k.mk && pop >= 6) gap = "印のわりに人気が無い";
+  else if (k && !k.mk && pop <= 3) gap = "人気だが印は回さない（人気に逆らう）";
+  return { txt, lab, gap, pop };
+}
+function kotobaPanel(race) {
+  const kt = race.kt; if (!kt) return "";
+  const H = n => race.horses.find(h => h.num === n);
+  const hs = kt.order.map(H).filter(h => h && !h.cancel && h.kt);
+  const mm = hs.map(h => ({ h, m: myomi(race, h) })).filter(x => x.m);
+  const good = mm.filter(x => x.m.lab === "妙味あり"), over = mm.filter(x => x.m.lab === "人気しすぎ"), gap = mm.filter(x => x.m.gap && x.m.lab !== "人気しすぎ" && x.m.lab !== "妙味あり");
+  const vb = v => v === "選ぶ" ? "" : v === "消し" ? `<b class="leak">消し</b>` : `<small>選ばない</small>`;
+  const li = xs => `<ul class="kt">${xs.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`;
+  return `<div class="panel"><h2>予想の言語化 <small class="note">キモ・展開・能力・適性・枠・選ぶ理由と選ばない理由</small></h2>
+    <p class="note">印は朝のデータだけの印です。レースの後の答え合わせも、この朝の読みでします。</p>
+    <p class="tn"><b>予想のキモ</b></p>${li(kt.kimo)}
+    ${mm.length ? `<p class="tn"><b>オッズとの妙味</b>${race.result ? "（確定オッズ）" : ""}</p><ul class="kt">
+      ${good.length ? `<li><b class="ana">妙味あり</b> ${good.map(x => `${x.h.num}${x.h.kt.mk}（${esc(x.m.txt)}）`).join("・")}</li>` : `<li>期待値1.5以上の馬はいない${race.r < 7 ? "（7R より前は期待値を出していない）" : ""}</li>`}
+      ${over.length ? `<li><b class="leak">人気しすぎ</b> ${over.map(x => `${x.h.num}${x.h.kt.mk}（${esc(x.m.txt)}）`).join("・")}</li>` : ""}
+      ${gap.map(x => `<li>${x.h.num}${x.h.kt.mk}: ${esc(x.m.gap)}（${x.m.pop}番人気）</li>`).join("")}</ul>` : ""}
+    <details class="cl" open style="min-width:0"><summary>展開の読み</summary>${li(kt.tenkai)}</details>
+    ${kt.course && kt.course.length ? `<details class="cl" style="min-width:0"><summary>コースの傾向${kt.same && kt.same.length ? "・同じレースの過去" : ""}</summary>${li(kt.course)}${kt.same && kt.same.length ? li(kt.same) : ""}</details>` : ""}
+    <details class="cl" open style="min-width:0"><summary>全頭の評価（印の順）</summary>
+    ${hs.map(h => { const k = h.kt; const m = myomi(race, h);
+      return `<div class="ktr"><p>${chipNum(h.num, race.heads)} <b>${esc(k.mk || "")} ${esc(h.name)}</b> ${vb(k.v)}<br>${esc(k.line.replace(/^[◎○▲△] /, ""))}</p>
+      <p class="note">${[k.zen, k.place ? "位置の見込み " + k.place : "", k.type && k.type !== "まだ分からない" ? k.type : "", k.waku, m ? m.txt + (m.lab ? `（${m.lab}）` : "") : ""].filter(Boolean).map(esc).join("・")}</p>
+      ${k.good.length || k.bad.length ? `<details class="cl" style="min-width:0"><summary>材料（良い ${k.good.length}・不安 ${k.bad.length}）</summary><p class="note">${k.good.map(x => "＋ " + esc(x)).join("<br>")}${k.good.length && k.bad.length ? "<br>" : ""}${k.bad.map(x => "－ " + esc(x)).join("<br>")}</p></details>` : ""}</div>`; }).join("")}
+    </details>
+    <details class="cl"><summary>この言語化の決め方</summary><p class="note">${KT_NOTE}</p></details></div>`;
+}
+// 読みの答え合わせ（本人 2026-11-22「結果の読みがあっていたかどうか、読みが外れていたらその理由など、分析のクオリティを上げていって」）。race.yomi は yomi.py
+function yomiPanel(race, day) {
+  const y = race.yomi; if (!y) return "";
+  const ok = v => v === true ? `<b class="res1">○</b>` : v === false ? `<b class="leak">×</b>` : "—";
+  const ys = day && day.yomi_sum; const pc = (a) => a && a[1] ? `${a[0]}/${a[1]}（${Math.round(a[0] / a[1] * 100)}%）` : "—";
+  return `<div class="panel"><h2>読みの答え合わせ</h2>
+    <p class="tn">${y.sum.map(esc).join("。")}</p>
+    <div class="tw"><table><thead><tr><th>読み</th><th>予想</th><th>実際</th><th></th></tr></thead><tbody>
+    ${y.items.map(i => `<tr><td>${esc(i.k)}</td><td>${esc(i.y)}</td><td>${esc(i.j)}</td><td>${ok(i.ok)}</td></tr>`).join("")}</tbody></table></div>
+    ${y.lap ? `<p class="note">${esc(y.lap)}</p>` : ""}
+    <p class="tn"><b>印の馬</b></p><ul class="kt">${y.picks.map(p => `<li>${esc(p.mk)}${p.n} ${p.rk ? p.rk + "着" : "—"}${p.sa != null && p.rk !== 1 ? `（${p.sa}秒差）` : ""}: ${p.why.map(esc).join("・")}</li>`).join("")}</ul>
+    ${y.miss.length ? `<p class="tn"><b>見落とした馬（印の無い3着内）</b></p><ul class="kt">${y.miss.map(m => `<li>${m.n}（${m.rk}着・${esc(m.v)}）: ${m.why.map(esc).join("・")}</li>`).join("")}</ul>` : ""}
+    ${ys ? `<details class="cl"><summary>これまでの読みの成績（${ys.days}日 ${ys.nr}R）</summary><p class="note">${Object.entries(ys.items).map(([k, a]) => `${esc(k)} ${pc(a)}`).join("・")}<br>
+      ${["◎", "○", "▲", "△"].filter(m => ys.mk[m]).map(m => `${m}の3着内 ${pc(ys.mk[m])}`).join("・")}<br>3着内 ${ys.nr * 3}頭のうち印の5頭 ${ys.mk_in}頭・見落とし ${ys.nmiss}頭（${Object.entries(ys.miss).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${v}`).join("・")}）<br>
+      流れ・決まり手は3択なので、当てずっぽうでも 33% くらい。そこを超えるのが目当てです。</p></details>` : ""}</div>`;
+}
 const gapLab = r => r >= 3 ? "評価が大きく分かれる" : r >= 2.5 ? "強い断層" : "断層";
 const evTxt = x => `勝つ確率 ${(x.q * 100).toFixed(x.q < 0.1 ? 1 : 0)}%・${x.od}倍 → 期待値 <b>${x.ev.toFixed(2)}</b>`;
 function tanPanel(race) {   // レース画面の一番上: 参加／見送り、本命、今のステップの案
@@ -1344,7 +1407,9 @@ function renderRace(v, race) {
     ${badBaba(race) ? `<p class="warn">${esc(badBaba(race))}</p>` : ""}
     ${S.kekkaMsg ? `<p class="note">${esc(S.kekkaMsg)}</p>` : ""}
   </div>
+  ${yomiPanel(race, S.data)}
   ${osusumePanel(race)}
+  ${kotobaPanel(race)}
   ${tanPanel(race)}
   ${juniPanel(race)}
   ${storyPanel(race, pop)}
