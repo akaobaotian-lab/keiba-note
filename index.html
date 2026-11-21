@@ -1061,7 +1061,7 @@ function kotobaPanel(race) {
     <details class="cl" open style="min-width:0"><summary>全頭の評価（印の順）</summary>
     ${hs.map(h => { const k = h.kt; const m = myomi(race, h);
       return `<div class="ktr"><p>${chipNum(h.num, race.heads)} <b>${esc(k.mk || "")} ${esc(h.name)}</b> ${vb(k.v)}<br>${esc(k.line.replace(/^[◎○▲△] /, ""))}</p>
-      <p class="note">${[k.zen, k.place ? "位置の見込み " + k.place : "", k.type && k.type !== "まだ分からない" ? k.type : "", k.waku, m ? m.txt + (m.lab ? `（${m.lab}）` : "") : ""].filter(Boolean).map(esc).join("・")}</p>
+      <p class="note">${[k.zen, k.place ? "位置の見込み " + k.place + (k.psure ? "（はっきり）" : k.psure === false ? "（当日次第）" : "") : "", k.lead >= 0.3 ? "逃げる見込み " + Math.round(k.lead * 100) + "%" : "", k.type && k.type !== "まだ分からない" ? k.type : "", k.waku, m ? m.txt + (m.lab ? `（${m.lab}）` : "") : ""].filter(Boolean).map(esc).join("・")}</p>
       ${k.good.length || k.bad.length ? `<details class="cl" style="min-width:0"><summary>材料（良い ${k.good.length}・不安 ${k.bad.length}）</summary><p class="note">${k.good.map(x => "＋ " + esc(x)).join("<br>")}${k.good.length && k.bad.length ? "<br>" : ""}${k.bad.map(x => "－ " + esc(x)).join("<br>")}</p></details>` : ""}</div>`; }).join("")}
     </details>
     <details class="cl"><summary>この言語化の決め方</summary><p class="note">${KT_NOTE}</p></details></div>`;
