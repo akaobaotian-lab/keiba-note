@@ -480,7 +480,7 @@ function quickFill(race, what) {
   if (what === "ana") { const an = anaList(race, pop).map(x => x.num); if (b.way === "box") b.box = [...new Set([...b.box, ...an])]; else { const i = needOf(b.kind) - 1; b.cols[i] = [...new Set([...b.cols[i], ...an])]; } return; }
   if (what === "jusho3t" || what === "jusho3f") { const j = jushoShape(race, what === "jusho3t" ? "3連単" : "3連複"); if (!j) return; b.kind = j.b.kind; b.way = "form"; b.cols = j.b.cols.map(c => [...c]); b.box = []; return; }
   if (what === "tan") { const t = tanNerai(race).map(x => x.h.num); if (!t.length) return; b.kind = "単勝"; b.way = "form"; b.cols = [t, [], []]; b.box = []; return; }
-  if (what === "osu") { const o = osusume(race); if (!o || !o.t) return; b.kind = o.t.kind; b.way = "form"; b.cols = o.t.cols.map(c => [...c]); b.box = []; return; }
+  if (what.startsWith("osu")) { const o = osusume(race); const t = o && o.T && o.T[+(what.split(":")[1] || 0)]; if (!t) return; b.kind = t.kind; b.way = "form"; b.cols = t.cols.map(c => [...c]); b.box = []; return; }
   if (what.startsWith("step:")) { const [, n, i] = what.split(":").map(Number); const pl = stepPlan(race, n); const t = pl && pl.T[i]; if (!t) return; b.kind = t.kind; b.way = "form"; b.cols = [...t.cols.map(c => [...c]), [], [], []].slice(0, 3); b.box = []; return; }
   if (what !== "keshi") b.kind = "3連複";
   if (what === "kaikata") { const k = kaikataShape(race); if (!k) return; b.way = k.way; b.box = k.box; b.cols = k.cols; }
@@ -940,35 +940,55 @@ function finalHtml(race) {
       : `<p class="note">期待値1.5以上の馬がいない。次に高い馬: ${f.near.map(hx).join("・")}</p>`}
     ${f.keshi && f.keshi.length ? `<p class="note">消し（強い断層の直下）: ${f.keshi.join("・")}</p>` : ""}</div>`;
 }
-// レースごとのおすすめの買い方（本人 2026-11-21「レースごとにおすすめの買い方を出して」）。発走20分前の最終判定（race.final）で決める:
-//   参加なら今のステップの券。ただしステップ2〜4で本命に減点がある時は、本命を軸にしない単勝だけ。見送りなら買わない。20分前より前は今のオッズでの見込みだけ
-function finTickets(f) {
-  const hon = f.hon.num, ana = f.ana.map(x => x.num), ev = f.picks.map(x => x.num);
-  const o4 = f.o4 || ((f.steps["4"] || "").split("→")[2] || "").split("（")[0].trim().split("・").map(Number).filter(Boolean);
-  return { 1: { kind: "単勝", cols: [ev] }, 2: { kind: "馬連", cols: [[hon], ana] }, 3: { kind: "馬単", cols: [ana, [hon]] }, 4: { kind: "3連単", cols: [ana, [hon], o4] } };
+// レースごとのおすすめの買い方（本人 2026-11-21「レースごとにおすすめの買い方を出して」）
+// レースに合う買い方（本人 2026-11-21「ステップはあくまで、精度を図る為の目安。買い方はそのレースに合う買い方を選んで」）。ステップには縛られない。
+// 過去の参加 98R（2025-07〜2026-10、確定オッズ、kensho/race_fit_bt*.py）で、券種の向き不向きを一番分けたのは本命（勝つ確率1位）の勝つ確率:
+//   30%以上（58R）: 馬単 穴→本命 518%（前半544%・後半497%、大きい払戻の上位3つを除いても218%）、単勝 期待値1.5以上 386%。本命を2着に置く形が効く
+//   30%未満（40R）: 馬単・3連単は 0〜175%（上位3つを除くと 0%）。一番ましなのはワイド 本命－穴 128%（除くと 90%）
+//   合わせると（強い→馬単＋単勝・弱い→ワイド）: 364%、的中 31/98R、上位3つを除いて179%。しきい値は 25〜32% のどこでも 320〜370% で、30% は切りの良い所
+// 本命に減点がある時は、本命を軸にしない単勝だけ（2026-11-21 の減点の決め方）。見送りなら買わない。20分前より前は今のオッズでの見込みだけ
+const FIT_P = 0.30;
+const FIT_NOTE = "買い方は、そのレースの本命（勝つ確率1位）の強さで選びます。ステップは当たり方・回収を測る目安で、買い方は縛りません。過去の参加レース 98R（2025年7月〜2026年10月、確定オッズ）では、本命の勝つ確率が30%以上のレース（58R）は、本命を2着に置く馬単 穴→本命が 518%（前半 544%・後半 497%、大きい払戻の上位3つを除いても 218%）、単勝（期待値1.5以上）が 386% でした。30%未満のレース（40R）は、本命が崩れて馬単・3連単はほとんど当たらず、一番ましなワイド 本命－穴でも 128%（上位3つを除くと 90%）でした。合わせると 364%、3回に1回くらい（98R中31R）当たります。本命に減点（6か月以上の休み明け・初ダート／初芝・馬体重 ±15kg）がある時は、本命を軸にしない単勝だけにします。";
+function fitTickets(hon, hp, honGd, ev, ana) {
+  if (honGd) return { type: "減点", T: [{ kind: "単勝", cols: [ev] }] };
+  if (hp >= FIT_P) return { type: "強い", T: [{ kind: "馬単", cols: [ana, [hon]] }, { kind: "単勝", cols: [ev] }] };
+  return { type: "弱い", T: [{ kind: "ワイド", cols: [[hon], ana] }] };
 }
 function osusume(race) {
   if (race.r < 7) return null;   // 予想（最終判定）は7R以降だけ
-  const cs = curStep(); const f = race.final; const res = race.result;
+  const f = race.final; const res = race.result;
   const t20 = (m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`)(postMin(race) - 20);
+  const build = (hon, hp, gd, ev, ana) => {
+    const fit = fitTickets(hon, hp, gd.length > 0, ev, ana);
+    const T = fit.T.filter(t => t.cols.every(c => c.length)).map(t => ({ kind: t.kind, way: "form", cols: [...t.cols.map(c => [...c]), [], [], []].slice(0, 3), box: [], lab: t.kind + " " + colTxt(t) }));
+    T.forEach(t => { t.combos = combosOf(t); });
+    const cost = T.reduce((s, t) => s + t.combos.length * 100, 0);
+    const y = res ? T.reduce((s, t) => s + t.combos.reduce((u, c) => u + (payOf(race, t.kind, c) || 0), 0), 0) : null;
+    const short = T.map(t => `${t.lab}（${t.combos.length}点）`).join("＋") + `　${yen(cost)}`;
+    const pc = (hp * 100).toFixed(1);
+    const why = fit.type === "減点" ? `本命 ${hon} に減点（${gd.join("・")}）があるので、本命を軸にしない単勝だけ`
+      : fit.type === "強い" ? `本命 ${hon} の勝つ確率 ${pc}%（30%以上で強い）→ 本命を2着に置く馬単 穴→本命と、期待値1.5以上の単勝。過去の同じ形のレース 58R で 馬単 518%・単勝 386%`
+      : `本命 ${hon} の勝つ確率 ${pc}%（30%未満で強くない）→ 本命が崩れることがあるので、3着まででよいワイド 本命－穴。過去の同じ形のレース 40R で 128%（大きい払戻を除くと 90% の薄い形。金額は少なめに）`;
+    return { type: fit.type, T, cost, y, short, why };
+  };
   if (f) {
     if (!f.go) return { go: false, fin: true, short: "買わない（見送り）", why: `期待値1.5以上の馬がいない。本命 ${f.hon.num}（${f.hon.pop}番人気・期待値 ${f.hon.ev.toFixed(2)}）` };
-    const down = cs >= 2 && f.hon_gd; const n = down ? 1 : cs; const T = finTickets(f)[n];
-    const t = { kind: T.kind, way: "form", cols: [...T.cols.map(c => [...c]), [], [], []].slice(0, 3), box: [] };
-    const combos = combosOf(t); const y = res ? combos.reduce((u, c) => u + (payOf(race, t.kind, c) || 0), 0) : null;
-    return { go: true, fin: true, n, t, combos, y, short: `${t.kind} ${colTxt(T)}（${combos.length}点 ${yen(combos.length * 100)}）`,
-      why: `ステップ${n}の券${down ? `（今はステップ${cs}。本命 ${f.hon.num} に減点（${f.hon.gd.join("・")}）があるので、本命を軸にしない単勝だけ）` : ""}。期待値1.5以上: ${f.picks.map(x => `${x.num}（${x.pop}番人気・${x.odds}倍・期待値 ${x.ev.toFixed(2)}）`).join("・")}` };
+    const o = build(f.hon.num, f.hon.p, f.hon_gd ? (f.hon.gd || ["減点"]) : [], f.picks.map(x => x.num), f.ana.map(x => x.num));
+    return { go: true, fin: true, ...o, why: o.why + `。期待値1.5以上: ${f.picks.map(x => `${x.num}（${x.pop}番人気・${x.odds}倍・期待値 ${x.ev.toFixed(2)}）`).join("・")}` };
   }
   if (res) return null;
-  const pl = stepPlan(race, cs);
-  return { go: null, fin: false, short: `${t20} に決まる`, why: `発走20分前（${t20}）に、その時のオッズ・人気で決めます。` + (pl ? (pl.go ? `今のオッズでは参加の見込み（${pl.T.map(t => t.kind + " " + colTxt(t)).join("＋")}）。オッズが動くと変わります。` : "今のオッズでは見送りの見込み。") : "") };
+  const pl = stepPlan(race, 1); const head = `発走20分前（${t20}）に、その時のオッズ・人気で決めます。`;
+  if (!pl || !pl.go) return { go: null, fin: false, short: `${t20} に決まる`, why: head + (pl ? "今のオッズでは見送りの見込み。" : "") };
+  const o = build(pl.hon, pl.e.hon.q, pl.e.hon.h.gd || [], pl.evh, pl.ana);
+  return { go: null, fin: false, pre: o.short, short: `${t20} に決まる`, why: head + `今のオッズでは参加の見込みで、${o.short}。オッズが動くと変わります。` };
 }
 function osusumePanel(race) {
   const o = osusume(race); if (!o) return "";
-  return `<div class="panel" style="border:2px solid ${o.go ? "var(--rough)" : "var(--line, #ccc)"}"><h2>おすすめの買い方 <small class="note">${o.fin ? `発走20分前（${esc(race.final.t)}）に決定・ステップ${curStep()}` : "まだ決まっていません"}</small></h2>
+  return `<div class="panel" style="border:2px solid ${o.go ? "var(--rough)" : "var(--line, #ccc)"}"><h2>おすすめの買い方 <small class="note">${o.fin ? `発走20分前（${esc(race.final.t)}）に決定` : "まだ決まっていません"}</small></h2>
     <p class="tn"><b class="${o.go ? "ana" : ""}" style="font-size:1.15em">${esc(o.short)}</b>${o.y != null ? `・<b class="${o.y ? "res1" : ""}">${o.y ? "払戻 " + yen(o.y) : "外れ"}</b>` : ""}</p>
     <p class="note">${esc(o.why)}</p>
-    ${o.go && !race.result ? `<div class="quick"><button data-q="osu" class="primary">この買い目を入れる</button></div>` : ""}</div>`;
+    ${o.go && !race.result ? `<div class="quick">${o.T.map((t, i) => `<button data-q="osu:${i}" class="${i ? "" : "primary"}">${esc(t.kind)}を買い目に入れる</button>`).join("")}</div>` : ""}
+    <details class="cl"><summary>この買い方の決め方</summary><p class="note">${FIT_NOTE}</p></details></div>`;
 }
 const gapLab = r => r >= 3 ? "評価が大きく分かれる" : r >= 2.5 ? "強い断層" : "断層";
 const evTxt = x => `勝つ確率 ${(x.q * 100).toFixed(x.q < 0.1 ? 1 : 0)}%・${x.od}倍 → 期待値 <b>${x.ev.toFixed(2)}</b>`;
@@ -1003,10 +1023,10 @@ function tanSummary(rs) {
   const fins = rs.filter(r => r.final);
   const fgo = fins.filter(r => r.final.go);
   const finHtml = fins.length ? `<p class="note"><b>発走20分前の最終判定</b>（${fins.length}R 済み）: ${fgo.length ? fgo.map(r => `<button class="pickb" data-rid="${r.rid}">${esc(r.place)}${r.r}R <small>${r.post}</small> <b>参加</b> ${esc((osusume(r) || {}).short || "")}</button>`).join("") : "参加なし"}${fins.length - fgo.length ? `　見送り ${fins.length - fgo.length}R` : ""}</p>` : "";
-  return `<div class="row"><span class="lab">今日の参加レース（ステップ${cs} ${esc(st.name)}の案）</span>${finHtml}
-    ${up.length ? `<p class="note">まだ20分前の判定前（今のオッズでの見込み。オッズが動くと変わります）:</p><div class="quick">${up.map(r => `<button class="pickb" data-rid="${r.rid}">${esc(r.place)}${r.r}R <small>${r.post}</small> <b>${esc(short(r))}</b>${(e => e && e.hon.h.gd && e.hon.h.gd.length ? ` <small>本命に減点</small>` : "")(evCalc(r))}</button>`).join("")}</div>`
+  return `<div class="row"><span class="lab">今日の参加レース（レースに合う買い方）</span>${finHtml}
+    ${up.length ? `<p class="note">まだ20分前の判定前（今のオッズでの見込み。オッズが動くと変わります）:</p><div class="quick">${up.map(r => `<button class="pickb" data-rid="${r.rid}">${esc(r.place)}${r.r}R <small>${r.post}</small> <b>${esc((osusume(r) || {}).pre || short(r))}</b>${(e => e && e.hon.h.gd && e.hon.h.gd.length ? ` <small>本命に減点</small>` : "")(evCalc(r))}</button>`).join("")}</div>`
       : `<span class="note">${!dn.length ? "<b>今日は勝負しない日</b>（" + (left ? "今のオッズでは" : "") + "期待値1.5以上の馬がいない）。" : "これから走るレースにはいません。"}${left ? "オッズが動くと変わります。" : ""}</span>`}
-    ${P.length ? `<p class="note">終わった参加レースで案どおり買っていたら: ${P.length}戦・<b class="${y > c ? "res1" : ""}">回収 ${pct(y, c)}</b>（${yen(c)} → ${yen(y)}）</p>` : ""}</div>`;
+    ${P.length ? `<p class="note">終わった参加レースで、ステップ${cs}（${esc(st.name)}）の案どおり買っていたら（ステップの目安）: ${P.length}戦・<b class="${y > c ? "res1" : ""}">回収 ${pct(y, c)}</b>（${yen(c)} → ${yen(y)}）</p>` : ""}</div>`;
 }
 function tanRecord() {   // 成績の一番上: ステップの進み具合（自分の記録／アプリの案）
   const all = (S.days || []).every(ds => ds in S.cache);
@@ -1352,7 +1372,7 @@ function renderRace(v, race) {
   v.querySelectorAll("[data-go]").forEach(el => el.onclick = () => { S.open = el.dataset.go; S.b = { kind: "3連複", way: "form", cols: [[], [], []], box: [], unit: S.b.unit || 100 }; render(); window.scrollTo(0, 0); });
   v.querySelectorAll("[data-kind]").forEach(el => el.onclick = () => { b.kind = el.dataset.kind; render(); });
   v.querySelectorAll("[data-way]").forEach(el => el.onclick = () => { b.way = el.dataset.way; render(); });
-  v.querySelectorAll("[data-q]").forEach(el => el.onclick = () => { quickFill(race, el.dataset.q); render(); if (el.dataset.q === "osu") { const bl = document.querySelector(".builder"); if (bl) bl.scrollIntoView({ behavior: "smooth" }); } });
+  v.querySelectorAll("[data-q]").forEach(el => el.onclick = () => { quickFill(race, el.dataset.q); render(); if (el.dataset.q.startsWith("osu")) { const bl = document.querySelector(".builder"); if (bl) bl.scrollIntoView({ behavior: "smooth" }); } });
   v.querySelectorAll("[data-step]").forEach(el => el.onclick = () => { S.stepView = +el.dataset.step; render(); });
   v.querySelectorAll(".pk").forEach(el => el.onclick = () => {
     const n = +el.dataset.n, col = el.dataset.col; const arr = col === "box" ? b.box : b.cols[+col];
