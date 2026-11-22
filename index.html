@@ -1061,7 +1061,7 @@ function kotobaPanel(race) {
     <details class="cl" open style="min-width:0"><summary>全頭の評価（印の順）</summary>
     ${hs.map(h => { const k = h.kt; const m = myomi(race, h);
       return `<div class="ktr"><p>${chipNum(h.num, race.heads)} <b>${esc(k.mk || "")} ${esc(h.name)}</b> ${vb(k.v)}<br>${esc(k.line.replace(/^[◎○▲△] /, ""))}</p>
-      <p class="note">${[k.zen, k.place ? "位置の見込み " + k.place + (k.psure ? "（はっきり）" : k.psure === false ? "（当日次第）" : "") : "", k.lead >= 0.3 ? "逃げる見込み " + Math.round(k.lead * 100) + "%" : "", k.type && k.type !== "まだ分からない" ? k.type : "", k.waku, m ? m.txt + (m.lab ? `（${m.lab}）` : "") : ""].filter(Boolean).map(esc).join("・")}</p>
+      <p class="note">${[k.p3 != null ? "3着内の見込み " + Math.round(k.p3 * 100) + "%" : "", k.zen, k.place ? "位置の見込み " + k.place + (k.psure ? "（はっきり）" : k.psure === false ? "（当日次第）" : "") : "", k.lead >= 0.3 ? "逃げる見込み " + Math.round(k.lead * 100) + "%" : "", k.type && k.type !== "まだ分からない" ? k.type : "", k.waku, m ? m.txt + (m.lab ? `（${m.lab}）` : "") : ""].filter(Boolean).map(esc).join("・")}</p>
       ${k.good.length || k.bad.length ? `<details class="cl" style="min-width:0"><summary>材料（良い ${k.good.length}・不安 ${k.bad.length}）</summary><p class="note">${k.good.map(x => "＋ " + esc(x)).join("<br>")}${k.good.length && k.bad.length ? "<br>" : ""}${k.bad.map(x => "－ " + esc(x)).join("<br>")}</p></details>` : ""}</div>`; }).join("")}
     </details>
     <details class="cl"><summary>この言語化の決め方</summary><p class="note">${KT_NOTE}</p></details></div>`;
@@ -1079,8 +1079,10 @@ function yomiPanel(race, day) {
     <p class="tn"><b>印の馬</b></p><ul class="kt">${y.picks.map(p => `<li>${esc(p.mk)}${p.n} ${p.rk ? p.rk + "着" : "—"}${p.sa != null && p.rk !== 1 ? `（${p.sa}秒差）` : ""}: ${p.why.map(esc).join("・")}</li>`).join("")}</ul>
     ${y.miss.length ? `<p class="tn"><b>見落とした馬（印の無い3着内）</b></p><ul class="kt">${y.miss.map(m => `<li>${m.n}（${m.rk}着・${esc(m.v)}）: ${m.why.map(esc).join("・")}</li>`).join("")}</ul>` : ""}
     ${ys ? `<details class="cl"><summary>これまでの読みの成績（${ys.days}日 ${ys.nr}R）</summary><p class="note">${Object.entries(ys.items).map(([k, a]) => `${esc(k)} ${pc(a)}`).join("・")}<br>
-      ${["◎", "○", "▲", "△"].filter(m => ys.mk[m]).map(m => `${m}の3着内 ${pc(ys.mk[m])}`).join("・")}<br>3着内 ${ys.nr * 3}頭のうち印の5頭 ${ys.mk_in}頭・見落とし ${ys.nmiss}頭（${Object.entries(ys.miss).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${v}`).join("・")}）<br>
-      流れ・決まり手は3択なので、当てずっぽうでも 33% くらい。そこを超えるのが目当てです。</p></details>` : ""}</div>`;
+      ${["◎", "○", "▲", "△"].filter(m => ys.mk[m]).map(m => `${m}の3着内 ${pc(ys.mk[m])}` + (ys.mkp && ys.mkp[m] ? `（見込み ${Math.round(ys.mkp[m][0] * 100)}%）` : "")).join("・")}<br>
+      ${ys.ein ? `印の5頭の3着内: 見込み 1Rあたり ${ys.ein[0]}頭 → 実際 ${ys.ein[1]}頭。見込みどおりなら、読みの数字は合っている<br>` : ""}3着内 ${ys.nr * 3}頭のうち印の5頭 ${ys.mk_in}頭・見落とし ${ys.nmiss}頭（${Object.entries(ys.miss).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${v}`).join("・")}）<br>
+      流れ・決まり手は3択なので、当てずっぽうでも 33% くらい。そこを超えるのが目当てです。<br>
+      見落としの「印の順位の差」は、3着内の見込みが10%以上あった馬。印の外からは1レース1頭ほど来るのが見込みどおりで、読み違いとは言えません。「能力の読み違い」は見込み10%未満の馬が来た時だけです。</p></details>` : ""}</div>`;
 }
 const gapLab = r => r >= 3 ? "評価が大きく分かれる" : r >= 2.5 ? "強い断層" : "断層";
 const evTxt = x => `勝つ確率 ${(x.q * 100).toFixed(x.q < 0.1 ? 1 : 0)}%・${x.od}倍 → 期待値 <b>${x.ev.toFixed(2)}</b>`;
