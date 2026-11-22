@@ -553,7 +553,23 @@ function jushoPanel(race) {
     <div class="quick"><button data-q="jusho3t" class="primary">三連単 ${nt}点 ${yen(nt * 100)}${got(t, "3連単")}</button><button data-q="jusho3f">三連複 ${nf}点 ${yen(nf * 100)}${got(f, "3連複")}</button></div>
     <p class="note">過去の確かめ（2025年1月〜2026年10月の重賞 223R）: 回収 三連単 123%・三連複 99%。ただし一番大きい当たり1本（2026 フェアリーS 三連単 87.9万円）を除くと 90%・85% で、たまの大当たり頼みです。相手を6番人気までに狭めるより、最大人気まで広げた方が良い結果でした。</p></div>`;
 }
+// おすすめの買い目は、3連複の形に決め打ちしない（本人 2026-11-23「おすすめの買い目は、3連複の形で固定しないで」）。
+//   上の「おすすめの買い方」（osusume。本命の強さで 馬単＋単勝／ワイド／単勝、見送りなら無し）と同じ券種・同じ馬で組む。20分前の判定の前は今のオッズでの見込み
+//   3連複の形（recoShape）は本人が 11/14 にやめた買い方（回収 90%止まり）。重賞の頭流し（jushoPanel）は別に残す
 function recoPanel(race) {
+  const o = osusume(race);
+  if (!o) return race.r < 7 ? `<div class="panel reco"><h2>おすすめの買い目</h2><p class="note">1〜6R は最終判定をしていないので、おすすめの買い目は出していません。</p></div>` : "";
+  const res = race.result; const age = o.fin ? `発走20分前（${esc(race.final.t)}）に決定` : "今のオッズでの見込み。20分前に決まります";
+  if (!o.T || !o.T.length) return `<div class="panel reco"><h2>おすすめの買い目 <small class="note">${age}</small></h2><p class="note"><b>${o.go === false ? "買わない（見送り）" : "なし（今のオッズでは見送りの見込み）"}</b>。期待値1.5以上の馬がいるレースだけ買います。</p></div>`;
+  const n = o.T.reduce((s, t) => s + t.combos.length, 0);
+  const hit = res && o.y != null ? `<p class="note"><b class="${o.y ? "res1" : "leak"}">${o.y ? `払戻 ${yen(o.y)}（${n}点 ${yen(n * 100)}）` : "外れ"}</b></p>` : "";
+  return `<div class="panel reco"><h2>おすすめの買い目 <small class="note">${age}</small></h2>
+    ${o.T.map(t => `<div class="shape"><b>${esc(t.lab)}</b>　<span class="note">${t.combos.length}点 ${yen(t.combos.length * 100)}</span></div>`).join("")}
+    <p class="note"><b>合わせて ${n}点 ${yen(n * 100)}</b>（1点100円）。券種はレースの形で選んでいます（上の「おすすめの買い方」と同じ）。</p>${hit}
+    ${!res ? `<div class="quick">${o.T.map((t, i) => `<button data-q="osu:${i}" class="${i ? "" : "primary"}">${esc(t.kind)}を買い目に入れる</button>`).join("")}<button id="recocopy">コピー</button><button data-yoso="now">今のオッズで出し直す</button></div>` : ""}
+  </div>`;
+}
+function recoPanel3f(race) {   // 以前の3連複の形（使っていない。比べ用に残す）
   const r = recoShape(race);
   if (!r) return "";
   const n = combosOf(r.b).length; const res = race.result;
@@ -988,7 +1004,7 @@ function osusume(race) {
   const pl = stepPlan(race, 1); const head = `発走20分前（${t20}）に、その時のオッズ・人気で決めます。`;
   if (!pl || !pl.go) return { go: null, fin: false, short: `${t20} に決まる`, why: head + (pl ? "今のオッズでは見送りの見込み。" : "") };
   const o = build(pl.hon, pl.e.hon.q, pl.e.hon.h.gd || [], pl.evh, pl.ana);
-  return { go: null, fin: false, pre: o.short, short: `${t20} に決まる`, why: head + `今のオッズでは参加の見込みで、${o.short}。オッズが動くと変わります。` };
+  return { go: null, fin: false, pre: o.short, T: o.T, cost: o.cost, type: o.type, short: `${t20} に決まる`, why: head + `今のオッズでは参加の見込みで、${o.short}。オッズが動くと変わります。` };
 }
 function osusumePanel(race) {
   const o = osusume(race); if (!o) return "";
@@ -1469,7 +1485,7 @@ function renderRace(v, race) {
   </div>`;
   $("back").onclick = () => { history.back(); };
   const rf = $("recofill"); if (rf) rf.onclick = () => { const r = recoShape(race); if (!r) return; S.b = { ...r.b, cols: r.b.cols.map(c => [...c]), box: [...r.b.box], unit: S.b.unit || 100 }; render(); const bl = document.querySelector(".builder"); if (bl) bl.scrollIntoView({ behavior: "smooth" }); };
-  const rc = $("recocopy"); if (rc) rc.onclick = async () => { const r = recoShape(race); if (!r) return; const txt = `${race.place}${race.r}R ${shapeText(r.b)}　${combosOf(r.b).length}点`;
+  const rc = $("recocopy"); if (rc) rc.onclick = async () => { const o = osusume(race); if (!o || !o.T || !o.T.length) return; const txt = `${race.place}${race.r}R ` + o.T.map(t => `${shapeText(t)}　${t.combos.length}点`).join("／");
     try { await navigator.clipboard.writeText(txt); rc.textContent = "コピーしました"; } catch { rc.textContent = "コピーできません"; } };
   v.querySelectorAll("[data-yoso]").forEach(el => el.onclick = () => askYoso(el.dataset.yoso, S.data.ds));
   v.querySelectorAll("[data-go]").forEach(el => el.onclick = () => { S.open = el.dataset.go; S.b = { kind: "3連複", way: "form", cols: [[], [], []], box: [], unit: S.b.unit || 100 }; render(); window.scrollTo(0, 0); });
