@@ -426,6 +426,23 @@ function betReturn(race, bet) {
   if (!known) return bet.pastedPay ?? null;
   return r;
 }
+// 結果の払戻を券種ごとに（本人 2026-11-28「三連複の金額だけでなく、単勝、複勝、ワイド、馬連、馬単、三連複、三連単も」）。res.pay は kekka の払戻そのまま。馬単は 2026-11-07 から
+const PAY_SHOW = [["単勝", "Tansho"], ["複勝", "Fukusho"], ["ワイド", "Wide"], ["馬連", "Umaren"], ["馬単", "Umatan"], ["三連複", "Fuku3"], ["三連単", "Tan3"]];
+function payRows(res) {   // [{lab, items: [{c: "16→8", y}]}]。記録の無い券種は items が空
+  const pay = (res && res.pay) || (res && res.fuku3 ? { Fuku3: res.fuku3 } : {});
+  return PAY_SHOW.map(([lab, k]) => {
+    const ord = k === "Umatan" || k === "Tan3";
+    const items = (pay[k] || []).map(([c, y]) => ({ c: (ord ? c : [...c].sort((a, b) => a - b)).join(ord ? "→" : "-"), y }));
+    if (k === "Fukusho" && res.rank) items.sort((a, b) => (res.rank[+a.c] || 99) - (res.rank[+b.c] || 99));   // 複勝は着順
+    return { lab, items };
+  });
+}
+function payLine(res) {   // 一覧の1行用
+  return payRows(res).map(r => `${r.lab} ${r.items.length ? r.items.map(x => `${x.c} ${yen(x.y)}`).join("・") : "記録なし"}`).join("　");
+}
+function payTable(res) {   // レース画面用
+  return `<table class="paytb" style="border-collapse:collapse;margin:4px 0;font-size:.92em">${payRows(res).map(r => `<tr><th style="text-align:left;padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top">${r.lab}</th><td style="padding:2px 0">${r.items.length ? r.items.map(x => `<span style="display:inline-block;margin-right:12px;white-space:nowrap">${x.c} <b>${yen(x.y)}</b></span>`).join("") : `<span class="note">記録なし</span>`}</td></tr>`).join("")}</table>`;
+}
 function findRace(date, race) { const d = S.cache[date]; return d ? d.races.find(x => `${x.place}${x.r}R` === race) : null; }
 
 // ---- 買い目づくり ----
@@ -1311,7 +1328,7 @@ function renderYoso() {
     ${list.map(r => {
       const mb = myBets(r); const cost = mb.reduce((s, b) => s + b.cost, 0);
       const ret = r.result ? mb.reduce((s, b) => s + (betReturn(r, b) || 0), 0) : null;
-      const res = r.result ? `${r.result.top3.join("-")}（${r.result.top3.map(n => r.result.ninki[n]).join("-")}人気） 三連複 ${yen(r.result.fuku3[0][1])}` : "";
+      const res = r.result ? `${r.result.top3.join("-")}（${r.result.top3.map(n => r.result.ninki[n]).join("-")}人気）` : "";
       return `<button class="rc${done(r) ? " done" : ""}${next === r ? " next" : ""}" data-rid="${r.rid}">
         ${pcBox(r)}
         <span class="bd">
@@ -1328,7 +1345,7 @@ function renderYoso() {
         ${keshiNums(r).length ? `<span class="sub">消し ${keshiNums(r).join("・")}</span>` : ""}
         ${r.now && r.horses.some(h => h.doro === "得") ? `<span class="sub"><b class="ana">道悪が得意 ${r.horses.filter(h => h.doro === "得" && !h.cancel).map(h => h.num).join("・")}</b></span>` : ""}
         ${r.now && r.horses.some(h => h.tag) ? `<span class="sub">${["危", "狙"].map(t => { const n = r.horses.filter(h => h.tag === t && !h.cancel).map(h => h.num); return n.length ? `<b class="${t === "危" ? "leak" : "ana"}">${t === "危" ? "危ない人気馬" : "狙い"} ${n.join("・")}</b>` : ""; }).filter(Boolean).join("　")}</span>` : ""}
-        ${res ? `<span class="sub">結果 ${res}</span>` : ""}
+        ${res ? `<span class="sub">結果 ${res}</span><span class="sub">${esc(payLine(r.result))}</span>` : ""}
         ${mb.length ? `<span class="mine ${ret ? "hit" : ""}">記録 ${mb.length}件 ${yen(cost)}${ret !== null ? " → " + yen(ret) : ""}</span>` : ""}
         </span>
       </button>`; }).join("")}
@@ -1455,7 +1472,7 @@ function renderRace(v, race) {
     <div class="nav"><button class="back" id="back">← 一覧</button><span class="navs">${prev ? `<button data-go="${prev.rid}">‹ ${esc(prev.place)}${prev.r}R</button>` : ""}${nxt ? `<button data-go="${nxt.rid}">${esc(nxt.place)}${nxt.r}R ›</button>` : ""}</span></div>
     <div class="rh">${pcBox(race)}<div><h3>${race.post} ${esc(race.place)}${race.r}R ${esc(race.title)}</h3>
       <p class="note">${race.surf}${race.dist}m・${race.heads}頭${pOf(race) != null ? "・左は三連複が1万円以上になる確率（平均 36%）" : ""}${race.now ? `・${esc(race.odds_time.slice(11, 16))} のオッズ` : ""}</p></div></div>
-    ${res ? `<p class="note"><b class="res1">結果 ${res.top3.join("-")}</b>（${res.top3.map(n => res.ninki[n]).join("-")}人気）三連複 ${yen(res.fuku3[0][1])}・馬場 ${esc(res.going)}</p>` : ""}
+    ${res ? `<p class="note"><b class="res1">結果 ${res.top3.join("-")}</b>（${res.top3.map(n => res.ninki[n]).join("-")}人気）・馬場 ${esc(res.going)}</p>${payTable(res)}` : ""}
     ${badBaba(race) ? `<p class="warn">${esc(badBaba(race))}</p>` : ""}
     ${S.kekkaMsg ? `<p class="note">${esc(S.kekkaMsg)}</p>` : ""}
   </div>
