@@ -560,7 +560,7 @@ function recoPanel(race) {
   const o = osusume(race);
   if (!o) return race.r < 7 ? `<div class="panel reco"><h2>おすすめの買い目</h2><p class="note">1〜6R は最終判定をしていないので、おすすめの買い目は出していません。</p></div>` : "";
   const res = race.result; const age = o.fin ? `発走20分前（${esc(race.final.t)}）に決定` : "今のオッズでの見込み。20分前に決まります";
-  if (!o.T || !o.T.length) return `<div class="panel reco"><h2>おすすめの買い目 <small class="note">${age}</small></h2><p class="note"><b>${o.go === false ? "買わない（見送り）" : "なし（今のオッズでは見送りの見込み）"}</b>。期待値1.5以上の馬がいるレースだけ買います。</p></div>`;
+  if (!o.T || !o.T.length) return `<div class="panel reco"><h2>おすすめの買い目 <small class="note">${age}</small></h2><p class="note"><b>${o.go === false ? "買わない（見送り）" : "なし（今のオッズでは見送りの見込み）"}</b>。期待値1.5以上の馬がいるか、総合1位が4〜6番人気で期待値1.0以上のレースだけ買います。</p></div>`;
   const n = o.T.reduce((s, t) => s + t.combos.length, 0);
   const hit = res && o.y != null ? `<p class="note"><b class="${o.y ? "res1" : "leak"}">${o.y ? `払戻 ${yen(o.y)}（${n}点 ${yen(n * 100)}）` : "外れ"}</b></p>` : "";
   return `<div class="panel reco"><h2>おすすめの買い目 <small class="note">${age}</small></h2>
@@ -851,6 +851,8 @@ function juniPanel(race) {
 // 確かめ（2025-07〜2026-10、7R以降 2,215R、モデルにとって初見、確定オッズ）: 114頭・勝ち8頭・回収 247%（前半 159%・後半 296%、上位3つを除くと 123%、
 // 引き直しで100%を下回る確率 4%、最長32連敗）。1日0.7R、半分の日は参加なし。本命の期待値はほぼ全部 0.6〜0.9（割に合うのは 2%）。境目は結果を見て決めたので、前向きの記録で確かめる
 const EV_T = 1.5, EV_PMIN = 0.03, EV_A = 1.446, EV_LAM = 0.4;
+// 総合1位の段（本人 2026-11-28「今の見送り判定は厳しすぎる」→「単勝・複勝で参加」）。final_judge.py の MARU_POP・MARU_EV と同じ
+const MARU_POP = [4, 6], MARU_EV = 1.0;
 const TAN_NOTE = "勝つ確率は、オッズから見た勝率と、総合の印（オッズ・人気なし）から見た勝率を 6:4 で合わせた物です。期待値＝勝つ確率×単勝オッズで、1.0 なら払った分が平均で戻る、1.5 なら 1.5倍で戻る計算です。オッズだけで見るとどの馬も約 0.8（控除の分だけ割に合わない）なので、印がオッズより高く見ている馬だけが 1 を超えます。参加は期待値1.5以上の馬の単勝。過去の確かめ（2025-07〜2026-10、7R以降、初見の114頭）で勝ち8頭・回収 247%（大きい払戻の上位3つを除くと 123%、最長32連敗）。参加するのは1日0.7Rほどで、半分の日は参加なし（勝負しない日）。本命（一番勝ちそうな馬）の期待値はほとんど 0.6〜0.9 で、単勝を買うと回収は 8割ほどです。オッズは発走まで動くので、買う直前の数字で見てください。";
 function evCalc(race) {
   if (race.r < 7) return null;   // 確かめたのは 7R以降だけ（アプリの予想も 7R以降）
@@ -861,11 +863,14 @@ function evCalc(race) {
   const q = hs.map(h => 1 / od(h)); const qs = q.reduce((a, b) => a + b, 0);
   const z = hs.map((h, i) => Math.pow(q[i] / qs, 1 - EV_LAM) * Math.pow(g[i] / gs, EV_LAM)); const zs = z.reduce((a, b) => a + b, 0);
   const pop = popOrder(race);
-  const xs = hs.map((h, i) => ({ h, p: pop.indexOf(h.num) + 1, q: z[i] / zs, od: od(h), ev: z[i] / zs * od(h) }));
+  const xs = hs.map((h, i) => ({ h, p: pop.indexOf(h.num) + 1, q: z[i] / zs, g: g[i] / gs, od: od(h), ev: z[i] / zs * od(h) }));
   const hon = xs.reduce((a, b) => b.q > a.q ? b : a);
+  const maru = xs.reduce((a, b) => b.g > a.g ? b : a);   // 総合1位（オッズを見ない総合の点数が一番高い馬）
   const gk = gapKeshi(race);
-  return { xs, hon, gk, picks: xs.filter(x => x.ev >= EV_T && x.q >= EV_PMIN && !gk.includes(x.h.num)).sort((a, b) => b.ev - a.ev) };
+  return { xs, hon, gk, maru, maruGo: maru.p >= MARU_POP[0] && maru.p <= MARU_POP[1] && maru.ev >= MARU_EV,
+    picks: xs.filter(x => x.ev >= EV_T && x.q >= EV_PMIN && !gk.includes(x.h.num)).sort((a, b) => b.ev - a.ev) };
 }
+const MARU_NOTE = "期待値1.5以上の馬がいなくても、総合1位（オッズを見ない総合の点数が一番高い馬）が4〜6番人気で、期待値が1.0以上なら、その馬の単勝・複勝で参加します（本人 2026-11-28。東京11R キャピタルSで、4番人気の◎16が勝ったのがきっかけ）。勝つ確率はオッズを6割で混ぜているので、モデルが市場の2倍に見ている馬でも、4〜6番人気だと期待値は1.0前後にしかならず、1.5の決まりには入りません。過去（2025年7月〜2026年10月、7R以降、確定オッズ）では93R（1日0.7Rほど）で、単勝 128%（前半131%・後半125%。大きい払戻の上位3つを除くと89%）、複勝 108%（上位3つを除くと95%）。同じ形のワイドは上位3つを除くと55〜67%なので入れていません。7つの形を試した中で一番良かった物なので、これからのレースの記録で確かめます。";
 // ---- ステップ制（本人 2026-11-16「すこしシステムを作り直そう」→ 同日「これからは的中率じゃなく回収率で考えよう」） ----
 // 1 単勝・複勝 → 2 ワイド・馬連 → 3 馬単・3連複 → 4 3連単。1戦＝1レース。クリアは戦数と回収率だけ（的中率は参考に見せるだけ）。
 // 自分の記録（STEP_FROM から、その段の券種を買ったレース）でクリアを数え、今のステップを決める。アプリの案の成績も横に並べる（本人の選択「両方を並べる」）。
@@ -960,7 +965,8 @@ function finalHtml(race) {
   return `<div class="fin" style="border:2px solid ${f.go ? "var(--rough)" : "var(--line, #ccc)"};border-radius:8px;padding:6px 10px;margin:4px 0 8px">
     <p class="tn"><b class="${f.go ? "ana" : ""}">最終判定（${esc(f.t)}・発走20分前）: ${f.go ? "参加" : "見送り"}</b></p>
     <p class="tn">本命 ${hx(f.hon)}${f.hon.gd && f.hon.gd.length ? `・<b class="leak">減点（${f.hon.gd.map(esc).join("・")}）</b>` : "・減点なし"}</p>
-    ${f.go ? `<p class="tn">期待値1.5以上: ${f.picks.map(hx).join("・")}</p><p class="tn">${Object.entries(f.steps).map(([k, v]) => `ステップ${k}: ${esc(v)}${k !== "1" && f.hon_gd ? "（本命に減点 → 見送りの目安）" : ""}`).join("<br>")}</p>`
+    ${f.maru ? `<p class="tn">${f.maru_go ? `<b class="ana">総合1位の段で参加</b>: ${hx(f.maru)} の単勝・複勝` : `総合1位 ${hx(f.maru)}（4〜6番人気で期待値1.0以上なら単勝・複勝で参加）`}</p>` : ""}
+    ${(f.go_ev != null ? f.go_ev : f.go) ? `<p class="tn">期待値1.5以上: ${f.picks.map(hx).join("・")}</p><p class="tn">${Object.entries(f.steps).map(([k, v]) => `ステップ${k}: ${esc(v)}${k !== "1" && f.hon_gd ? "（本命に減点 → 見送りの目安）" : ""}`).join("<br>")}</p>`
       : `<p class="note">期待値1.5以上の馬がいない。次に高い馬: ${f.near.map(hx).join("・")}</p>`}
     ${f.keshi && f.keshi.length ? `<p class="note">消し（強い断層の直下）: ${f.keshi.join("・")}</p>` : ""}</div>`;
 }
@@ -982,28 +988,36 @@ function osusume(race) {
   if (race.r < 7) return null;   // 予想（最終判定）は7R以降だけ
   const f = race.final; const res = race.result;
   const t20 = (m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`)(postMin(race) - 20);
-  const build = (hon, hp, gd, ev, ana) => {
-    const fit = fitTickets(hon, hp, gd.length > 0, ev, ana);
-    const T = fit.T.filter(t => t.cols.every(c => c.length)).map(t => ({ kind: t.kind, way: "form", cols: [...t.cols.map(c => [...c]), [], [], []].slice(0, 3), box: [], lab: t.kind + " " + colTxt(t) }));
+  // mx: 総合1位の段で参加する時の馬 {num, pop, ev}（無ければ null）。ev が空（期待値1.5以上がいない）なら、総合1位の単勝・複勝だけ
+  const build = (hon, hp, gd, ev, ana, mx) => {
+    const fit = ev.length ? fitTickets(hon, hp, gd.length > 0, ev, ana) : { type: "総合1位", T: [] };
+    const T0 = fit.T.map(t => ({ kind: t.kind, cols: t.cols.map(c => [...c]) }));
+    if (mx) { const tt = T0.find(t => t.kind === "単勝"); if (tt) { if (!tt.cols[0].includes(mx.num)) tt.cols[0].push(mx.num); } else T0.push({ kind: "単勝", cols: [[mx.num]] }); T0.push({ kind: "複勝", cols: [[mx.num]] }); }
+    const T = T0.filter(t => t.cols.every(c => c.length)).map(t => ({ kind: t.kind, way: "form", cols: [...t.cols, [], [], []].slice(0, 3), box: [], lab: t.kind + " " + colTxt(t) }));
     T.forEach(t => { t.combos = combosOf(t); });
     const cost = T.reduce((s, t) => s + t.combos.length * 100, 0);
     const y = res ? T.reduce((s, t) => s + t.combos.reduce((u, c) => u + (payOf(race, t.kind, c) || 0), 0), 0) : null;
     const short = T.map(t => `${t.lab}（${t.combos.length}点）`).join("＋") + `　${yen(cost)}`;
     const pc = (hp * 100).toFixed(1);
-    const why = fit.type === "減点" ? `本命 ${hon} に減点（${gd.join("・")}）があるので、本命を軸にしない単勝だけ`
+    const mw = mx ? `総合1位 ${mx.num} が ${mx.pop}番人気で期待値 ${mx.ev.toFixed(2)}（1.0以上）→ その馬の単勝・複勝。過去の同じ形のレース 93R で 単勝 128%・複勝 108%（大きい払戻の上位3つを除くと 89%・95%）` : "";
+    const why = !ev.length ? mw
+      : (fit.type === "減点" ? `本命 ${hon} に減点（${gd.join("・")}）があるので、本命を軸にしない単勝だけ`
       : fit.type === "強い" ? `本命 ${hon} の勝つ確率 ${pc}%（30%以上で強い）→ 本命を2着に置く馬単 穴→本命と、期待値1.5以上の単勝。過去の同じ形のレース 58R で 馬単 518%・単勝 386%`
-      : `本命 ${hon} の勝つ確率 ${pc}%（30%未満で強くない）→ 本命が崩れることがあるので、3着まででよいワイド 本命－穴。過去の同じ形のレース 40R で 128%（大きい払戻を除くと 90% の薄い形。金額は少なめに）`;
+      : `本命 ${hon} の勝つ確率 ${pc}%（30%未満で強くない）→ 本命が崩れることがあるので、3着まででよいワイド 本命－穴。過去の同じ形のレース 40R で 128%（大きい払戻を除くと 90% の薄い形。金額は少なめに）`) + (mw ? "。加えて、" + mw : "");
     return { type: fit.type, T, cost, y, short, why };
   };
   if (f) {
-    if (!f.go) return { go: false, fin: true, short: "買わない（見送り）", why: `期待値1.5以上の馬がいない。本命 ${f.hon.num}（${f.hon.pop}番人気・期待値 ${f.hon.ev.toFixed(2)}）` };
-    const o = build(f.hon.num, f.hon.p, f.hon_gd ? (f.hon.gd || ["減点"]) : [], f.picks.map(x => x.num), f.ana.map(x => x.num));
-    return { go: true, fin: true, ...o, why: o.why + `。期待値1.5以上: ${f.picks.map(x => `${x.num}（${x.pop}番人気・${x.odds}倍・期待値 ${x.ev.toFixed(2)}）`).join("・")}` };
+    const goEv = f.go_ev != null ? f.go_ev : f.go;   // 11/28 より前の判定には go_ev・maru_go が無い（go＝期待値1.5以上）
+    const mx = f.maru_go && f.maru ? f.maru : null;
+    if (!goEv && !mx) return { go: false, fin: true, short: "買わない（見送り）", why: `期待値1.5以上の馬がいない。本命 ${f.hon.num}（${f.hon.pop}番人気・期待値 ${f.hon.ev.toFixed(2)}）${f.maru ? `。総合1位 ${f.maru.num} は ${f.maru.pop}番人気・期待値 ${f.maru.ev.toFixed(2)}（4〜6番人気で1.0以上なら単勝・複勝で参加）` : ""}` };
+    const o = build(f.hon.num, f.hon.p, f.hon_gd ? (f.hon.gd || ["減点"]) : [], goEv ? f.picks.map(x => x.num) : [], f.ana.map(x => x.num), mx);
+    return { go: true, fin: true, ...o, why: o.why + (goEv ? `。期待値1.5以上: ${f.picks.map(x => `${x.num}（${x.pop}番人気・${x.odds}倍・期待値 ${x.ev.toFixed(2)}）`).join("・")}` : "") };
   }
   if (res) return null;
   const pl = stepPlan(race, 1); const head = `発走20分前（${t20}）に、その時のオッズ・人気で決めます。`;
-  if (!pl || !pl.go) return { go: null, fin: false, short: `${t20} に決まる`, why: head + (pl ? "今のオッズでは見送りの見込み。" : "") };
-  const o = build(pl.hon, pl.e.hon.q, pl.e.hon.h.gd || [], pl.evh, pl.ana);
+  const mx0 = pl && pl.e.maruGo ? { num: pl.e.maru.h.num, pop: pl.e.maru.p, ev: pl.e.maru.ev } : null;
+  if (!pl || (!pl.go && !mx0)) return { go: null, fin: false, short: `${t20} に決まる`, why: head + (pl ? "今のオッズでは見送りの見込み。" : "") };
+  const o = build(pl.hon, pl.e.hon.q, pl.e.hon.h.gd || [], pl.go ? pl.evh : [], pl.ana, mx0);
   return { go: null, fin: false, pre: o.short, T: o.T, cost: o.cost, type: o.type, short: `${t20} に決まる`, why: head + `今のオッズでは参加の見込みで、${o.short}。オッズが動くと変わります。` };
 }
 function osusumePanel(race) {
@@ -1012,7 +1026,7 @@ function osusumePanel(race) {
     <p class="tn"><b class="${o.go ? "ana" : ""}" style="font-size:1.15em">${esc(o.short)}</b>${o.y != null ? `・<b class="${o.y ? "res1" : ""}">${o.y ? "払戻 " + yen(o.y) : "外れ"}</b>` : ""}</p>
     <p class="note">${esc(o.why)}</p>
     ${o.go && !race.result ? `<div class="quick">${o.T.map((t, i) => `<button data-q="osu:${i}" class="${i ? "" : "primary"}">${esc(t.kind)}を買い目に入れる</button>`).join("")}</div>` : ""}
-    <details class="cl"><summary>この買い方の決め方</summary><p class="note">${FIT_NOTE}</p></details></div>`;
+    <details class="cl"><summary>この買い方の決め方</summary><p class="note">${FIT_NOTE}</p><p class="note">${MARU_NOTE}</p></details></div>`;
 }
 // 馬ごとのくわしい情報（本人 2026-11-22「馬柱、馬の好馬体重、馬の走りのタイプ（瞬発型なのか耐久型なのか）、得意な脚質など」）。h.uma は umabashira.py → app_data.py
 // 確かめ（2025-07〜2026-11、8頭以上、kensho/uma_bt*.py）: どれも人気・オッズにほぼ入っていて、買い方は変えない（情報として出すだけ）
@@ -1117,7 +1131,8 @@ function tanPanel(race) {   // レース画面の一番上: 参加／見送り�
   const tk = pl && pl.go ? pl.T.map((t, i) => { const y = res ? t.combos.reduce((u, c) => u + (payOf(race, t.kind, c) || 0), 0) : null;
       return (n >= 2 && H.h.gd && H.h.gd.length && i === 0 ? `<p class="note"><b class="leak">本命に減点あり → この券は見送りの目安</b></p>` : "") + `<p class="tn"><b>${esc(t.lab)}</b> ${colTxt(t)}　${t.combos.length}点 ${yen(t.combos.length * 100)}${y != null ? `・<b class="${y ? "res1" : ""}">${y ? "払戻 " + yen(y) : "外れ"}</b>` : ""}</p>`
         + (res ? "" : `<div class="quick"><button data-q="step:${n}:${i}" class="${i ? "" : "primary"}">${esc(t.lab)}を買い目に入れる</button></div>`); }).join("") : "";
-  return `<div class="panel tan">${race.final ? `<details class="cl"><summary>発走20分前の最終判定のくわしい数字</summary>${finalHtml(race)}</details>` : ""}<h2>${race.final && !res ? "今のオッズでは " : ""}${e.picks.length ? `<b class="ana">参加</b>` : "見送り"} <small class="note">${race.final && !res ? "20分前の判定の後に動いたオッズでの計算。買うのは上のおすすめ" : `期待値1.5以上の馬がいるレースだけ（${res ? "確定" : "今"}のオッズ）`}</small></h2>
+  return `<div class="panel tan">${race.final ? `<details class="cl"><summary>発走20分前の最終判定のくわしい数字</summary>${finalHtml(race)}</details>` : ""}<h2>${race.final && !res ? "今のオッズでは " : ""}${e.picks.length || e.maruGo ? `<b class="ana">参加</b>${e.picks.length ? "" : "（総合1位の単勝・複勝）"}` : "見送り"} <small class="note">${race.final && !res ? "20分前の判定の後に動いたオッズでの計算。買うのは上のおすすめ" : `期待値1.5以上の馬がいるか、総合1位が4〜6番人気で期待値1.0以上のレースだけ（${res ? "確定" : "今"}のオッズ）`}</small></h2>
+    <p class="tn">${e.maruGo ? `<b class="ana">総合1位 ${e.maru.h.num} ${esc(e.maru.h.name)}</b>` : `総合1位 ${e.maru.h.num} ${esc(e.maru.h.name)}`} ${e.maru.p}番人気・${evTxt(e.maru)}${rkTxt(e.maru)}${e.maruGo ? "　→ 単勝・複勝で参加" : `　<small class="note">（4〜6番人気で期待値1.0以上なら単勝・複勝で参加）</small>`}</p>
     <p class="tn"><b>本命 ${H.h.num} ${esc(H.h.name)}</b> ${H.p}番人気・${evTxt(H)}（${H.ev >= 1 ? "割に合う" : "割に合わない"}）${rkTxt(H)}${gdTxt(H.h)}${H.p === 1 ? `<br><small class="note">1番人気なので勝ち馬にはせず、2着の軸に使う（本人 2026-11-16。1着で買う形は過去 47〜70%、2着に置く形は 159〜351%）</small>` : ""}</p>
     ${(() => { const nk = e.xs.filter(x => x.p >= 1 && x.p <= 4).sort((a, b) => a.p - b.p); const bad = nk.filter(x => x.h.gd && x.h.gd.length); const fav = nk[0]; const alt = nk.find(x => !(x.h.gd && x.h.gd.length));
       return bad.length ? `<p class="tn"><b class="leak">減点のある人気馬</b> ${bad.map(x => `${x.h.num}（${x.p}番人気・${x.h.gd.map(esc).join("・")}）`).join("・")}${fav && fav.h.gd && fav.h.gd.length && alt ? `<br><small class="note">1番人気に減点あり。軸にするなら、減点の無い次の人気馬 ${alt.h.num}（${alt.p}番人気）</small>` : ""}</p>` : ""; })()}
@@ -1125,12 +1140,13 @@ function tanPanel(race) {   // レース画面の一番上: 参加／見送り�
     ${e.picks.length ? `<p class="tn"><b class="ana">期待値の高い穴</b> ${pl.ana.map(m => `${m}（${xs[m].p}番人気・期待値 ${xs[m].ev.toFixed(2)}${gapsOf(race).some(g => g.dn === m && g.r >= 2.5) ? "・断層の直下" : ""}${res && res.rank[m] ? "・" + res.rank[m] + "着" : ""}）`).join("・")}</p>
       ${seg}<p class="note">ステップ${n} ${esc(st.name)}（${esc(st.goal)}）: ${esc(st.plan)}</p>${tk}`
       : `<p class="note">期待値1.5以上の馬がいないので、このレースは見送り。${near.length ? "次に高い馬: " + near.map(x => `${x.h.num}（${x.p}番人気・期待値 ${x.ev.toFixed(2)}）`).join("・") : ""}</p>`}
-    <details class="cl"><summary>期待値・参加・ステップの案の決め方</summary><p class="note">${TAN_NOTE}</p><p class="note">${GD_NOTE}</p><p class="note">ステップの案（回収率で選んだ形。強い断層の直下の馬は消してから、過去の参加 98R）:<br>${STEPS.map(s => `${s.n}. ${esc(s.plan)} — ${STEP_BT[s.n]}`).join("<br>")}<br>オッズの断層は、検討する馬を絞る目安として出すだけで、案は変えません。過去（2023年〜）では、断層 2.5倍以上の直下の馬は毎年 単勝 67〜74%・複勝 73〜79% と、ふつうの馬（77〜83%・78〜80%）より悪い（消し候補）。なので、強い断層（2.5倍以上）の直下の馬は消しにして、参加の判定と穴から外しています（外すと過去の回収は少し上がった）。<br>どれも過去の参加レース 106R で、その券種の形をいくつも試して回収率が一番高かった物です。大きい払戻の数本で回収が大きく動くので、前向きの記録で確かめます。</p></details></div>`;
+    <details class="cl"><summary>期待値・参加・ステップの案の決め方</summary><p class="note">${TAN_NOTE}</p><p class="note">${MARU_NOTE}</p><p class="note">${GD_NOTE}</p><p class="note">ステップの案（回収率で選んだ形。強い断層の直下の馬は消してから、過去の参加 98R）:<br>${STEPS.map(s => `${s.n}. ${esc(s.plan)} — ${STEP_BT[s.n]}`).join("<br>")}<br>オッズの断層は、検討する馬を絞る目安として出すだけで、案は変えません。過去（2023年〜）では、断層 2.5倍以上の直下の馬は毎年 単勝 67〜74%・複勝 73〜79% と、ふつうの馬（77〜83%・78〜80%）より悪い（消し候補）。なので、強い断層（2.5倍以上）の直下の馬は消しにして、参加の判定と穴から外しています（外すと過去の回収は少し上がった）。<br>どれも過去の参加レース 106R で、その券種の形をいくつも試して回収率が一番高かった物です。大きい払戻の数本で回収が大きく動くので、前向きの記録で確かめます。</p></details></div>`;
 }
 function tanSummary(rs) {
   if (!rs.some(r => evCalc(r))) return "";
   const cs = curStep(); const st = STEPS[cs - 1];
-  const up = rs.filter(r => !r.result && !r.final && tanNerai(r).length); const dn = rs.filter(r => r.result && tanNerai(r).length);   // up: 20分前の判定が済んだレースは、その判定（おすすめ）を上に出すので外す
+  const goNow = r => tanNerai(r).length || (evCalc(r) || {}).maruGo;   // 期待値1.5以上か、総合1位の段
+  const up = rs.filter(r => !r.result && !r.final && goNow(r)); const dn = rs.filter(r => r.result && goNow(r));   // up: 20分前の判定が済んだレースは、その判定（おすすめ）を上に出すので外す
   const P = dn.map(r => { const pl = stepPlan(r, cs); return pl && pl.go ? { c: planCost(pl), y: planRet(r, pl) } : null; }).filter(Boolean);
   const c = P.reduce((s, x) => s + x.c, 0), y = P.reduce((s, x) => s + x.y, 0), h = P.filter(x => x.y > 0).length;
   const left = rs.some(r => !r.result);
@@ -1140,7 +1156,7 @@ function tanSummary(rs) {
   const finHtml = fins.length ? `<p class="note"><b>発走20分前の最終判定</b>（${fins.length}R 済み）: ${fgo.length ? fgo.map(r => `<button class="pickb" data-rid="${r.rid}">${esc(r.place)}${r.r}R <small>${r.post}</small> <b>参加</b> ${esc((osusume(r) || {}).short || "")}</button>`).join("") : "参加なし"}${fins.length - fgo.length ? `　見送り ${fins.length - fgo.length}R` : ""}</p>` : "";
   return `<div class="row"><span class="lab">今日の参加レース（レースに合う買い方）</span>${finHtml}
     ${up.length ? `<p class="note">まだ20分前の判定前（今のオッズでの見込み。オッズが動くと変わります）:</p><div class="quick">${up.map(r => `<button class="pickb" data-rid="${r.rid}">${esc(r.place)}${r.r}R <small>${r.post}</small> <b>${esc((osusume(r) || {}).pre || short(r))}</b>${(e => e && e.hon.h.gd && e.hon.h.gd.length ? ` <small>本命に減点</small>` : "")(evCalc(r))}</button>`).join("")}</div>`
-      : `<span class="note">${!dn.length ? "<b>今日は勝負しない日</b>（" + (left ? "今のオッズでは" : "") + "期待値1.5以上の馬がいない）。" : "これから走るレースにはいません。"}${left ? "オッズが動くと変わります。" : ""}</span>`}
+      : `<span class="note">${!dn.length ? "<b>今日は勝負しない日</b>（" + (left ? "今のオッズでは" : "") + "期待値1.5以上の馬も、4〜6番人気で期待値1.0以上の総合1位もいない）。" : "これから走るレースにはいません。"}${left ? "オッズが動くと変わります。" : ""}</span>`}
     ${P.length ? `<p class="note">終わった参加レースで、ステップ${cs}（${esc(st.name)}）の案どおり買っていたら（ステップの目安）: ${P.length}戦・<b class="${y > c ? "res1" : ""}">回収 ${pct(y, c)}</b>（${yen(c)} → ${yen(y)}）</p>` : ""}</div>`;
 }
 function tanRecord() {   // 成績の一番上: ステップの進み具合（自分の記録／アプリの案）
